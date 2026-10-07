@@ -518,22 +518,33 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     return loadSymbols().then(function (s) {
       syms = s; return loadTickers();
     }).then(function () {
-      var coins = [];
+      var coins = [], failed = [];
       setLive("Loading daily candles for " + syms.length + " coins…");
-      return pool(syms, 6, function (s) {
+      function take(s) {
         return loadCandles(s).then(function (k) {
           if (!k || !k.length) return;
           coins.push({ symbol: s.symbol, id: s.id, base: s.base, pp: s.pp, qp: s.qp, minUsdt: s.minUsdt, ts: k.map(function (x) { return x[0]; }), o: k.map(function (x) { return x[1]; }),
             h: k.map(function (x) { return x[2]; }), l: k.map(function (x) { return x[3]; }), c: k.map(function (x) { return x[4]; }), v: k.map(function (x) { return x[5]; }) });
         });
-      }, function (d, n) { setProg(0.05 + 0.9 * d / n); setLive("Loading daily candles: " + d + " of " + n + " coins"); }).then(function () { return coins; });
+      }
+      return pool(syms, 5, function (s) { return take(s).catch(function () { failed.push(s); }); },
+        function (d, n) { setProg(0.05 + 0.85 * d / n); setLive("Loading daily candles: " + d + " of " + n + " coins"); })
+        .then(function () {
+          if (!failed.length) return;
+          // Bitget throttles bursts from a brand-new visitor; retry the misses slowly
+          var retry = failed.splice(0);
+          setLive("Retrying " + retry.length + " coins Bitget throttled…");
+          return pool(retry, 1, function (s) {
+            return new Promise(function (res) { setTimeout(res, 400); }).then(function () { return take(s); }).catch(function () { failed.push(s); });
+          }, function (d, n) { setProg(0.9 + 0.08 * d / n); });
+        }).then(function () { state.failed = failed.length; return coins; });
     }).then(function (coins) {
       setLive("Analysing…");
       return new Promise(function (res) { setTimeout(function () { res(coins); }, 30); });
     }).then(function (coins) {
       coins.sort(function (a, b) { return a.symbol < b.symbol ? -1 : 1; });
       var out = ENGINE.run(coins);
-      state.coins = out.coins; state.summary = out.summary; state.skipped = syms.length - out.coins.length;
+      state.coins = out.coins; state.summary = out.summary; state.skipped = syms.length - out.coins.length - (state.failed || 0);
       var cbyS = {}; out.coins.forEach(function (co) { cbyS[co.symbol] = co; });
       state.rows = out.rows.map(function (r) {
         var co = cbyS[r.symbol]; r.id = co.id; r.base = co.base; r.pp = co.pp; r.qp = co.qp; r.minUsdt = co.minUsdt; r.chart = co; return r;
@@ -587,7 +598,8 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     var ph = { bull: 0, sideways: 0, bear: 0 }, now = 0, live = 0;
     rows.forEach(function (r) { ph[r.phase] = (ph[r.phase] || 0) + 1; if (r.status !== "ranging") now++; if (liveStatus(r)) live++; });
     $("counts").innerHTML = "<span><b>" + rows.length + "</b> coins analysed</span><span><b>" + ph.bull + "</b> bull</span><span><b>" + ph.sideways + "</b> sideways</span><span><b>" +
-      ph.bear + "</b> bear</span><span><b>" + now + "</b> broke out in the last 2 days</span><span><b>" + live + "</b> past a trigger right now</span><span><b>" + state.skipped + "</b> too new to analyse</span>";
+      ph.bear + "</b> bear</span><span><b>" + now + "</b> broke out in the last 2 days</span><span><b>" + live + "</b> past a trigger right now</span><span><b>" + state.skipped + "</b> too new to analyse</span>" +
+      (state.failed ? "<span><b>" + state.failed + "</b> could not be loaded (Refresh now retries)</span>" : "");
     renderList(soft);
     if (!state.sel || !state.byS[state.sel]) {
       var hash = (location.hash || "").slice(1).toUpperCase();
@@ -880,7 +892,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
   $("tbody").addEventListener("click", function (e) { var tr = e.target.closest("tr.row"); if (tr) pick(tr); });
   $("tbody").addEventListener("keydown", function (e) { var tr = e.target.closest("tr.row"); if (tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); pick(tr); } });
   $("copy").addEventListener("click", copyCsv);
-  $("refresh").addEventListener("click", function () { priceRefresh(); });
+  $("refresh").addEventListener("click", function () { if (state.failed) fullLoad(); else priceRefresh(); });
   var lastW = 0;
   new ResizeObserver(function (es) { var w = Math.round(es[0].contentRect.width); if (w !== lastW) { lastW = w; var r = state.byS[state.sel]; if (r) drawChart(r); } }).observe($("detail"));
   var mq = window.matchMedia("(prefers-color-scheme: dark)");
