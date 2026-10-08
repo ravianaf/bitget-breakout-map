@@ -131,8 +131,6 @@ td.r, th.r { text-align: right; }
   <div class="livebar" aria-live="polite">
     <span><span class="dot" id="dot"></span><span id="livetext">Starting…</span></span>
     <div class="progress" id="progwrap"><i id="prog"></i></div>
-    <span id="nextref"></span>
-    <button id="refresh" type="button">Refresh now</button>
   </div>
 
   <section class="truth" aria-labelledby="truth-h">
@@ -178,7 +176,7 @@ td.r, th.r { text-align: right; }
       <li><b>Direction</b>: bull → up, bear → down, sideways → whichever half of the range price is in.</li>
       <li><b>Afterwards</b>: measured move (range height projected beyond the trigger, log scale) and the median days past breakouts took to reach it.</li>
       <li><b>Accuracy test</b>: the method re-run as of 60 days ago with only data up to then, scored against what happened.</li>
-      <li><b>Data</b>: Bitget public API (candles, prices, volume), Binance prices for the cross-check, CoinGecko for market cap. Stablecoins and tokenized stocks are excluded. Prices refresh every 5 minutes; the full analysis re-runs when a new daily candle closes.</li>
+      <li><b>Data</b>: Bitget public API (candles, prices, volume), Binance prices for the cross-check, CoinGecko for market cap. Stablecoins and tokenized stocks are excluded. The open coin streams live from Bitget's WebSocket feed, all other prices refresh every 10 seconds, and the full analysis re-runs by itself after each daily close.</li>
     </ul>
   </section>
 </div>
@@ -347,7 +345,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
 (function () {
   "use strict";
   var $ = function (id) { return document.getElementById(id); };
-  var NS = "http://www.w3.org/2000/svg", DAY = 86400, DAYMS = 864e5, HIST = 420, REFRESH_MS = 5 * 60 * 1000;
+  var NS = "http://www.w3.org/2000/svg", DAY = 86400, DAYMS = 864e5, HIST = 420, LIST_REFRESH_MS = 10 * 1000;
   var API = "https://api.bitget.com/api/v2/spot";
   var STABLES = ["USDC","FDUSD","TUSD","DAI","USDD","PYUSD","USDE","BUSD","EUR","EURT","USTC","USDP","GUSD","FRAX","LUSD","GHO","USD1","RLUSD","USDS","USDG","EURC","USDT","BFUSD","USDF"];
   var state = { coins: [], rows: [], byS: {}, summary: null, tick: {}, bn: {}, cg: {}, sel: null, lastRefresh: 0, asOf: null, skipped: 0, busy: false };
@@ -516,7 +514,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
 
   /* ---------- main load / refresh ---------- */
   function fullLoad() {
-    if (state.busy) return; state.busy = true; $("refresh").disabled = true;
+    if (state.busy) return; state.busy = true; state.lastFull = Date.now();
     setLive("Loading coin list from Bitget…"); setProg(0.02);
     var syms;
     return loadSymbols().then(function (s) {
@@ -562,18 +560,94 @@ if (typeof module !== "undefined") module.exports = ENGINE;
       loadMarketCaps(refreshCapsView).then(refreshCapsView);   // in the background; never holds up the page
     }).catch(function (e) {
       setProg(1);
-      setLive("Could not reach Bitget (" + e.message + "). Showing the last saved data if any; retrying at the next refresh.", "err");
-    }).then(function () { state.busy = false; $("refresh").disabled = false; });
+      state.loadError = e.message;
+      setLive("Could not reach Bitget (" + e.message + "). Retrying automatically…", "err");
+    }).then(function () { state.busy = false; });
   }
-  function liveOk() { setLive("Live · prices updated " + hhmm(state.lastRefresh) + " · candles to " + fmtDY(state.asOf) + " (UTC daily close)", "on"); }
+  function liveOk() { statusTick(); }
+  // Status line, redrawn every second: what is streaming and how fresh the list prices are.
+  function statusTick() {
+    if (state.busy || !state.rows.length) return;
+    var age = state.lastRefresh ? Math.round((Date.now() - state.lastRefresh) / 1000) : null;
+    var r = state.byS[state.sel], streaming = WS.open && r && WS.subbed === r.id;
+    var stale = age === null || age > 45;
+    setLive((stale ? "Reconnecting to Bitget… " : "Live · ") +
+      (streaming ? "streaming " + r.base + " · " : "") + "all prices " + (age === null ? "–" : age + " s ago") +
+      " · candles to " + fmtDY(state.asOf) + ", next analysis after 00:00 UTC", stale ? "err" : "on");
+  }
+  // Every 10 s: all prices in one request, updated in place. New daily candle -> full re-analysis.
   function priceRefresh() {
     if (state.busy || state.refreshing) return;
     var needCandles = state.asOf && (Date.parse(state.asOf + "T00:00:00Z") < lastClosedTs());
-    if (needCandles || !state.rows.length) return fullLoad();
+    var retryFailed = state.failed && Date.now() - (state.lastFull || 0) > 5 * 60e3;
+    var retryError = !state.rows.length && Date.now() - (state.lastFull || 0) > 30e3;
+    if (needCandles || retryFailed || retryError) return fullLoad();
+    if (!state.rows.length) return;
     state.refreshing = true;
-    return loadTickers().then(function () { liveOk(); renderAll(true); })
-      .catch(function (e) { state.lastRefresh = Date.now(); setLive("Price refresh failed (" + e.message + "); will retry in 5 minutes.", "err"); })
+    return loadTickers().then(softUpdate)
+      .catch(function () {})
       .then(function () { state.refreshing = false; });
+  }
+  function softUpdate() {
+    renderCounts();
+    document.querySelectorAll("#tbody tr.row").forEach(function (tr) {
+      var r = state.byS[tr.dataset.s]; if (!r) return;
+      tr.cells[1].textContent = fmtP(livePrice(r));
+      tr.cells[3].innerHTML = nextCell(r);
+    });
+    updateSelLive(true);
+  }
+
+  /* ---------- streaming the open coin (Bitget public WebSocket) ---------- */
+  var WS = { sock: null, open: false, subbed: null, want: null, retry: 1000, ping: null };
+  function wsSend(o) { try { WS.sock.send(typeof o === "string" ? o : JSON.stringify(o)); } catch (e) {} }
+  function wsArg(id) { return { instType: "SPOT", channel: "ticker", instId: id }; }
+  function wsConnect() {
+    var s;
+    try { s = new WebSocket("wss://ws.bitget.com/v2/ws/public"); } catch (e) { return; }
+    WS.sock = s;
+    s.onopen = function () {
+      WS.open = true; WS.retry = 1000; WS.subbed = null;
+      WS.ping = setInterval(function () { wsSend("ping"); }, 25000);
+      if (WS.want) wsWatch(WS.want);
+    };
+    s.onmessage = function (m) {
+      if (m.data === "pong") return;
+      var d; try { d = JSON.parse(m.data); } catch (e) { return; }
+      if (!d.data || !d.arg || d.arg.channel !== "ticker") return;
+      var t = d.data[0], id = d.arg.instId;
+      state.tick[id] = { last: +t.lastPr, vol: +t.quoteVolume, ts: +t.ts, at: Date.now() };
+      var r = state.byS[state.sel];
+      if (r && r.id === id) scheduleSel();
+    };
+    s.onclose = function () {
+      WS.open = false; WS.subbed = null; clearInterval(WS.ping);
+      setTimeout(wsConnect, WS.retry); WS.retry = Math.min(30000, WS.retry * 2);
+    };
+    s.onerror = function () { try { s.close(); } catch (e) {} };
+  }
+  function wsWatch(id) {
+    WS.want = id;
+    if (!WS.open || WS.subbed === id) return;
+    if (WS.subbed) wsSend({ op: "unsubscribe", args: [wsArg(WS.subbed)] });
+    wsSend({ op: "subscribe", args: [wsArg(id)] });
+    WS.subbed = id;
+  }
+  var selTimer = null, lastChartDraw = 0;
+  function scheduleSel() {               // ~3 pushes a second; repaint at most once a second
+    if (selTimer) return;
+    selTimer = setTimeout(function () { selTimer = null; updateSelLive(false); }, 1000);
+  }
+  function updateSelLive(fromList) {
+    var r = state.byS[state.sel]; if (!r || !document.querySelector(".detail .price")) return;
+    var p = livePrice(r);
+    $("detail").querySelector(".price").firstChild.nodeValue = fmtP(p) + " ";
+    var lp = $("livepx"); if (lp) lp.innerHTML = livePxHtml(r, planFor(r));
+    var la = $("livealert"), ls = liveStatus(r);
+    if (la) { la.hidden = !ls; la.textContent = ls ? ls.text : ""; }
+    var tr = document.querySelector('#tbody tr.row[data-s="' + r.symbol + '"]');
+    if (tr && !fromList) { tr.cells[1].textContent = fmtP(p); tr.cells[3].innerHTML = nextCell(r); }
+    if (Date.now() - lastChartDraw > 2000) { lastChartDraw = Date.now(); drawChart(r); }
   }
 
   /* ---------- live status per coin ---------- */
@@ -599,11 +673,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
       ];
       $("tiles").innerHTML = tiles.map(function (t) { return '<div class="tile"><b>' + t[0] + "</b><span>" + t[1] + "</span><em>" + t[2] + "</em></div>"; }).join("");
     }
-    var ph = { bull: 0, sideways: 0, bear: 0 }, now = 0, live = 0;
-    rows.forEach(function (r) { ph[r.phase] = (ph[r.phase] || 0) + 1; if (r.status !== "ranging") now++; if (liveStatus(r)) live++; });
-    $("counts").innerHTML = "<span><b>" + rows.length + "</b> coins analysed</span><span><b>" + ph.bull + "</b> bull</span><span><b>" + ph.sideways + "</b> sideways</span><span><b>" +
-      ph.bear + "</b> bear</span><span><b>" + now + "</b> broke out in the last 2 days</span><span><b>" + live + "</b> past a trigger right now</span><span><b>" + state.skipped + "</b> too new to analyse</span>" +
-      (state.failed ? "<span><b>" + state.failed + "</b> could not be loaded (Refresh now retries)</span>" : "");
+    renderCounts();
     renderList(soft);
     if (!state.sel || !state.byS[state.sel]) {
       var hash = (location.hash || "").slice(1).toUpperCase();
@@ -611,6 +681,20 @@ if (typeof module !== "undefined") module.exports = ENGINE;
       if (pick) state.sel = pick.symbol;
     }
     if (state.sel) select(state.sel, soft);
+  }
+  function renderCounts() {
+    var rows = state.rows, ph = { bull: 0, sideways: 0, bear: 0 }, now = 0, live = 0;
+    rows.forEach(function (r) { ph[r.phase] = (ph[r.phase] || 0) + 1; if (r.status !== "ranging") now++; if (liveStatus(r)) live++; });
+    $("counts").innerHTML = "<span><b>" + rows.length + "</b> coins analysed</span><span><b>" + ph.bull + "</b> bull</span><span><b>" + ph.sideways + "</b> sideways</span><span><b>" +
+      ph.bear + "</b> bear</span><span><b>" + now + "</b> broke out in the last 2 days</span><span><b>" + live + "</b> past a trigger right now</span><span><b>" + state.skipped + "</b> too new to analyse</span>" +
+      (state.failed ? "<span><b>" + state.failed + "</b> could not be loaded (retrying automatically)</span>" : "");
+  }
+  function nextCell(r) {
+    var ls = liveStatus(r);
+    return r.status !== "ranging"
+      ? '<span class="arrow-' + (r.status.indexOf("up") >= 0 ? "up" : "down") + '">' + (r.status.indexOf("up") >= 0 ? "▲ now" : "▼ now") + "</span>"
+      : ls ? '<span class="arrow-' + ls.k + '">' + (ls.k === "up" ? "▲ live" : "▼ live") + "</span>"
+      : '<span class="arrow-' + r.bias + '">' + (r.bias === "up" ? "▲ up" : "▼ down") + "</span>";
   }
   function filtered() {
     var q = $("q").value.trim().toUpperCase(), fp = $("fphase").value, fs = $("fstatus").value, so = $("sort").value;
@@ -637,11 +721,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     var list = filtered();
     $("shown").textContent = list.length + " of " + state.rows.length + " coins";
     $("tbody").innerHTML = list.map(function (r) {
-      var ls = liveStatus(r);
-      var next = r.status !== "ranging"
-        ? '<span class="arrow-' + (r.status.indexOf("up") >= 0 ? "up" : "down") + '">' + (r.status.indexOf("up") >= 0 ? "▲ now" : "▼ now") + "</span>"
-        : ls ? '<span class="arrow-' + ls.k + '">' + (ls.k === "up" ? "▲ live" : "▼ live") + "</span>"
-        : '<span class="arrow-' + r.bias + '">' + (r.bias === "up" ? "▲ up" : "▼ down") + "</span>";
+      var next = nextCell(r);
       var when = r.status !== "ranging" ? "now" : fmtRange(r.bo_p25, r.bo_p75);
       return '<tr class="row' + (state.sel === r.symbol ? " sel" : "") + '" data-s="' + esc(r.symbol) + '" tabindex="0"><td><b>' + esc(r.base) +
         '</b></td><td class="r num">' + fmtP(livePrice(r)) + '</td><td><span class="pill ' + r.phase + '">' + r.phase +
@@ -673,7 +753,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
       '<div class="badges"><span class="pill ' + r.phase + '">' + r.phase + " phase</span>" +
       '<span class="pill ' + (r.bias === "up" ? "bull" : "bear") + '">' + (now ? r.status : "leans " + r.bias) + "</span>" +
       '<span class="check">' + r.days_since_last_breakout + " days since last breakout · squeeze tighter than " + pct(100 - r.squeeze_pctile) + " of the past year</span></div>" +
-      (ls ? '<div class="alert">' + ls.text + "</div>" : "") +
+      '<div class="alert" id="livealert"' + (ls ? "" : " hidden") + ">" + (ls ? ls.text : "") + "</div>" +
       '<div class="legend" aria-hidden="true"><span><i style="background:var(--up)"></i>Up candle</span><span><i style="background:var(--down)"></i>Down candle</span>' +
       '<span><i style="background:var(--sma50);height:2px"></i>50-day avg</span><span><i style="background:var(--sma200);height:2px"></i>200-day avg</span>' +
       '<span><i style="background:var(--window);opacity:.35"></i>Est. breakout window</span><span><i style="border-top:2px dashed var(--ink-2);height:0;border-radius:0"></i>Projected move</span>' +
@@ -691,9 +771,10 @@ if (typeof module !== "undefined") module.exports = ENGINE;
         (cap && cap.mc && t.vol ? " · " + (t.vol / cap.mc * 100).toFixed(2) + "% of market cap" : "")) +
       fact("History", co.c.length + " days", "targets reached within 60 days in " + pct(r.target_hit_rate_hist_pct) + " of past breakouts (" + r.target_stats_source + ")") +
       "</div>" + '<p class="read">' + reading(r) + "</p>" + planHtml(r);
-    drawChart(r);
+    drawChart(r); lastChartDraw = Date.now();
     wirePlan(r);
-    liveSel();
+    wsWatch(r.id);                      // stream this coin from now on
+    if (!WS.open) liveSel();            // stream not up yet: one direct fetch so the price is fresh right away
   }
 
   /* live price for the open coin: fetched on open and every 15 s, updated in place */
@@ -704,13 +785,11 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     getJSON(API + "/market/tickers?symbol=" + encodeURIComponent(r.id), 1).then(function (j) {
       var t = (j.data || [])[0]; if (!t || state.sel !== r.symbol) return;
       state.tick[r.id] = { last: +t.lastPr, vol: +t.usdtVolume, ts: +t.ts, at: Date.now() };
-      var px = document.querySelector(".detail .price");
-      if (px) px.firstChild.nodeValue = fmtP(+t.lastPr) + " ";
-      var lp = $("livepx"); if (lp) lp.innerHTML = livePxHtml(r, planFor(r));
-      drawChart(r);
+      lastChartDraw = 0;
+      updateSelLive(false);
     }).catch(function () {}).then(function () { liveBusy = false; });
   }
-  setInterval(function () { if (document.visibilityState === "visible") liveSel(); }, 15000);
+  setInterval(function () { if (!WS.open) liveSel(); }, 15000);   // fallback only while the stream is down
 
   /* ---------- trade plan: Bitget spot Trigger entry + OCO exit ---------- */
   var SIZING = { acct: 100, risk: 2 };
@@ -929,20 +1008,20 @@ if (typeof module !== "undefined") module.exports = ENGINE;
   $("tbody").addEventListener("click", function (e) { var tr = e.target.closest("tr.row"); if (tr) pick(tr); });
   $("tbody").addEventListener("keydown", function (e) { var tr = e.target.closest("tr.row"); if (tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); pick(tr); } });
   $("copy").addEventListener("click", copyCsv);
-  $("refresh").addEventListener("click", function () { if (state.failed) fullLoad(); else priceRefresh(); });
   var lastW = 0;
   new ResizeObserver(function (es) { var w = Math.round(es[0].contentRect.width); if (w !== lastW) { lastW = w; var r = state.byS[state.sel]; if (r) drawChart(r); } }).observe($("detail"));
   var mq = window.matchMedia("(prefers-color-scheme: dark)");
   if (mq.addEventListener) mq.addEventListener("change", function () { var r = state.byS[state.sel]; if (r) drawChart(r); });
-  setInterval(function () {
-    if (!state.lastRefresh) return;
-    var left = Math.max(0, REFRESH_MS - (Date.now() - state.lastRefresh));
-    $("nextref").textContent = state.busy ? "" : "next refresh in " + Math.floor(left / 60000) + ":" + String(Math.floor(left / 1000) % 60).padStart(2, "0");
-    if (left === 0) priceRefresh();
-  }, 1000);
-  document.addEventListener("visibilitychange", function () {   // returning to the tab after a while refreshes right away
-    if (document.visibilityState === "visible" && state.lastRefresh && Date.now() - state.lastRefresh > REFRESH_MS) priceRefresh();
+  // Always on: status line every second, all prices every 10 s, full re-analysis after each daily close.
+  setInterval(statusTick, 1000);
+  setInterval(priceRefresh, LIST_REFRESH_MS);
+  document.addEventListener("visibilitychange", function () {   // phones pause background tabs; catch up the moment it is visible
+    if (document.visibilityState === "visible") {
+      priceRefresh();
+      if (WS.sock && WS.sock.readyState > 1) { WS.retry = 1000; wsConnect(); }
+    }
   });
+  wsConnect();
   fullLoad();
 })();
 </script>
