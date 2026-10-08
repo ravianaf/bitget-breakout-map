@@ -131,6 +131,7 @@ td.r, th.r { text-align: right; }
   <div class="livebar" aria-live="polite">
     <span><span class="dot" id="dot"></span><span id="livetext">Starting…</span></span>
     <div class="progress" id="progwrap"><i id="prog"></i></div>
+    <button id="refresh" type="button" title="Reloads the page: reconnects the live feed and re-reads all data. Your coin and calculator settings are kept.">Refresh</button>
   </div>
 
   <section class="truth" aria-labelledby="truth-h">
@@ -1012,6 +1013,13 @@ if (typeof module !== "undefined") module.exports = ENGINE;
   new ResizeObserver(function (es) { var w = Math.round(es[0].contentRect.width); if (w !== lastW) { lastW = w; var r = state.byS[state.sel]; if (r) drawChart(r); } }).observe($("detail"));
   var mq = window.matchMedia("(prefers-color-scheme: dark)");
   if (mq.addEventListener) mq.addEventListener("change", function () { var r = state.byS[state.sel]; if (r) drawChart(r); });
+  // Manual escape hatch if anything ever looks stuck: a real reload. The coin stays in the address (#BTCUSDT),
+  // calculator settings are in localStorage, and candles come back from IndexedDB, so it takes seconds.
+  $("refresh").addEventListener("click", function () {
+    $("refresh").disabled = true; $("refresh").textContent = "Refreshing…";
+    try { if (WS.sock) WS.sock.close(); } catch (e) {}
+    location.reload();
+  });
   // Always on: status line every second, all prices every 10 s, full re-analysis after each daily close.
   setInterval(statusTick, 1000);
   setInterval(priceRefresh, LIST_REFRESH_MS);
