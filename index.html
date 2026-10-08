@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Bitget Breakout Map</title>
+<title>Crypto Breakout Map</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -124,7 +124,7 @@ td.r, th.r { text-align: right; }
 <div class="wrap">
   <header>
     <div class="eyebrow" id="asof">Bitget spot · USDT pairs · daily candles</div>
-    <h1>Bitget Breakout Map</h1>
+    <h1>Crypto Breakout Map</h1>
     <p class="sub">Every tradable Bitget coin with enough history, sorted into bull, bear and sideways phases, with its breakout trigger prices, the estimated date window for the next breakout, the measured move after it, volume and market cap. This page pulls the data itself, so it is current whenever it is opened.</p>
   </header>
 
@@ -388,7 +388,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     if (dbp) return dbp;
     dbp = new Promise(function (res) {
       try {
-        var rq = indexedDB.open("bitget-breakout-map", 1);
+        var rq = indexedDB.open("crypto-breakout-map", 1);
         rq.onupgradeneeded = function () { rq.result.createObjectStore("kv"); };
         rq.onsuccess = function () { res(rq.result); };
         rq.onerror = function () { res(null); };
@@ -836,7 +836,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
 
   /* ---------- trade plan: Bitget spot Trigger entry + OCO exit ---------- */
   var SIZING = { acct: 100, risk: 2 };
-  try { var sv = JSON.parse(localStorage.getItem("bbm-sizing") || "null"); if (sv && sv.acct > 0 && sv.risk > 0) SIZING = sv; } catch (e) {}
+  try { var sv = JSON.parse(localStorage.getItem("cbm-sizing") || "null"); if (sv && sv.acct > 0 && sv.risk > 0) SIZING = sv; } catch (e) {}
   function roundTo(x, dp, mode) {
     var f = Math.pow(10, dp);
     return (mode === "up" ? Math.ceil(x * f - 1e-7) : Math.floor(x * f + 1e-7)) / f;
@@ -910,7 +910,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
       var acct = parseFloat(a.value), risk = parseFloat(k.value);
       if (!(acct > 0) || !(risk > 0)) return;
       SIZING = { acct: acct, risk: risk };
-      try { localStorage.setItem("bbm-sizing", JSON.stringify(SIZING)); } catch (e) {}
+      try { localStorage.setItem("cbm-sizing", JSON.stringify(SIZING)); } catch (e) {}
       var id = document.activeElement && document.activeElement.id;
       var old = document.querySelector(".plan"); if (!old) return;
       var tmp = document.createElement("div"); tmp.innerHTML = planHtml(r);

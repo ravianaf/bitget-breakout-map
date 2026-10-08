@@ -1,4 +1,4 @@
-# Bitget Breakout Map
+# Crypto Breakout Map
 
 A single web page that analyses every tradable Bitget spot/USDT coin in the viewer's browser:
 market phase (bull / bear / sideways), 30-day breakout trigger prices, an estimated date window
