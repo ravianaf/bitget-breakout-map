@@ -177,7 +177,7 @@ td.r, th.r { text-align: right; }
       <li><b>Direction</b>: bull → up, bear → down, sideways → whichever half of the range price is in.</li>
       <li><b>Afterwards</b>: measured move (range height projected beyond the trigger, log scale) and the median days past breakouts took to reach it.</li>
       <li><b>Accuracy test</b>: the method re-run as of 60 days ago with only data up to then, scored against what happened.</li>
-      <li><b>Data</b>: Bitget public API (candles, prices, volume), Binance prices for the cross-check, CoinGecko for market cap. Stablecoins and tokenized stocks are excluded. The open coin streams live from Bitget's WebSocket feed, all other prices refresh every 10 seconds, and the full analysis re-runs by itself after each daily close.</li>
+      <li><b>Data</b>: Bitget public API (candles, prices, volume), Binance prices for the cross-check, CoinGecko for market cap. Stablecoins and tokenized stocks are excluded. The open coin streams live from Bitget's WebSocket feed and all other prices refresh every 10 seconds. Every 30 minutes the analysis re-runs with today's still-forming candle (phase, breakout status, squeeze, windows, marked provisional); trigger, target and stop prices stay on the last 30 closed days until the 00:00 UTC close, so they match the Telegram bot.</li>
     </ul>
   </section>
 </div>
@@ -557,6 +557,8 @@ if (typeof module !== "undefined") module.exports = ENGINE;
       setProg(1);
       renderAll();
       liveOk();
+      state.intradayAt = 0;                 // today's provisional pass runs right after this
+      setTimeout(runIntraday, 500);
       var refreshCapsView = function () { var r = state.byS[state.sel]; if (r && !document.querySelector(".plan input:focus")) select(r.symbol); };
       loadMarketCaps(refreshCapsView).then(refreshCapsView);   // in the background; never holds up the page
     }).catch(function (e) {
@@ -566,6 +568,44 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     }).then(function () { state.busy = false; });
   }
   function liveOk() { statusTick(); }
+
+  /* ---------- intraday re-analysis: every 30 min, including today's still-forming candle ----------
+     Phase, status ("breaking out now"), squeeze, bias and the estimated windows come from this
+     provisional pass. Trigger / target / stop prices and the trade plan stay on the last 30 CLOSED
+     days: they are today's levels (the same ones the Telegram bot watches) and must not move intraday. */
+  var INTRADAY_MS = 30 * 60 * 1000;
+  var PROV_KEYS = ["phase", "phase_detail", "status", "bias", "squeeze_pctile", "days_since_last_breakout", "last_breakout_dir",
+                   "bo_p10", "bo_p25", "bo_p50", "bo_p75", "bo_p90", "window_source", "past_quiet_stretches"];
+  function runIntraday() {
+    if (state.busy || state.intradayBusy || !state.coins.length) return;
+    state.intradayBusy = true;
+    var dayStart = lastClosedTs() + DAYMS, forming = {};
+    return pool(state.coins, 5, function (co) {
+      return getJSON(API + "/market/candles?symbol=" + co.id + "&granularity=1Dutc&limit=2", 2).then(function (j) {
+        parseRaw(j.data).forEach(function (k) { if (k[0] === dayStart) forming[co.symbol] = k; });
+      });
+    }).then(function () {
+      var prov = state.coins.map(function (co) {
+        var k = forming[co.symbol]; if (!k) return null;
+        return { symbol: co.symbol, id: co.id, base: co.base, pp: co.pp, qp: co.qp, minUsdt: co.minUsdt, forming: true,
+          ts: co.ts.concat([k[0]]), o: co.o.concat([k[1]]), h: co.h.concat([k[2]]), l: co.l.concat([k[3]]),
+          c: co.c.concat([k[4]]), v: co.v.concat([k[5]]) };
+      }).filter(Boolean);
+      var out = ENGINE.run(prov), byS = {}, pc = {};
+      out.rows.forEach(function (x) { byS[x.symbol] = x; });
+      out.coins.forEach(function (x) { pc[x.symbol] = x; });
+      var n = 0;
+      state.rows.forEach(function (r) {
+        var p = byS[r.symbol]; if (!p) return;
+        PROV_KEYS.forEach(function (k) { r[k] = p[k]; });
+        r.chart = pc[r.symbol]; r.provisional = true; n++;
+      });
+      state.intradayAt = Date.now(); state.intradayCoins = n;
+      if (document.querySelector(".plan input:focus")) { renderCounts(); renderList(); }
+      else renderAll(true);
+    }).catch(function () {}).then(function () { state.intradayBusy = false; });
+  }
+  function parseRaw(arr) { return (arr || []).map(function (k) { return [+k[0], +k[1], +k[2], +k[3], +k[4], +k[6]]; }); }
   // Status line, redrawn every second: what is streaming and how fresh the list prices are.
   function statusTick() {
     if (state.busy || !state.rows.length) return;
@@ -573,8 +613,10 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     var r = state.byS[state.sel], streaming = WS.open && r && WS.subbed === r.id;
     var stale = age === null || age > 45;
     setLive((stale ? "Reconnecting to Bitget… " : "Live · ") +
-      (streaming ? "streaming " + r.base + " · " : "") + "all prices " + (age === null ? "–" : age + " s ago") +
-      " · candles to " + fmtDY(state.asOf) + ", next analysis after 00:00 UTC", stale ? "err" : "on");
+      (streaming ? "streaming " + r.base + " · " : "") + "all prices " + (age === null ? "–" : age + " s ago") + " · " +
+      (state.intradayAt ? "analysis " + hhmm(state.intradayAt) + " with today's live candle, next " + hhmm(state.intradayAt + INTRADAY_MS)
+                        : (state.intradayBusy ? "updating analysis with today's candle…" : "analysis from the " + fmtDY(state.asOf) + " close")),
+      stale ? "err" : "on");
   }
   // Every 10 s: all prices in one request, updated in place. New daily candle -> full re-analysis.
   function priceRefresh() {
@@ -745,10 +787,10 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     var r = state.byS[symbol]; if (!r) return;
     var p = livePrice(r), cc = crossCheck(r), cap = matchCap(r), t = state.tick[r.id] || {}, ls = liveStatus(r);
     var now = r.status !== "ranging", mvDays = r.days_to_target_median, upT = r.bo_p50 && isFinite(mvDays) ? addDays(r.bo_p50, mvDays) : null;
-    var co = r.chart, n = co.v.length, avg20 = 0; for (var i = Math.max(0, n - 21); i < n - 1; i++) avg20 += co.v[i]; avg20 /= Math.max(1, Math.min(20, n - 1));
+    var co = r.chart, n = co.v.length - (co.forming ? 1 : 0), avg20 = 0; for (var i = Math.max(0, n - 21); i < n - 1; i++) avg20 += co.v[i];   // n: closed days only avg20 /= Math.max(1, Math.min(20, n - 1));
     var tv = "https://www.tradingview.com/chart/?symbol=BITGET:" + encodeURIComponent(r.base) + "USDT";
     $("detail").innerHTML =
-      '<div class="dhead"><div><div class="eyebrow">' + esc(r.phase_detail) + "</div><h2>" + esc(r.symbol) + "</h2></div>" +
+      '<div class="dhead"><div><div class="eyebrow">' + esc(r.phase_detail) + (r.provisional && state.intradayAt ? " · as of " + hhmm(state.intradayAt) + ", provisional until the 00:00 UTC close" : "") + "</div><h2>" + esc(r.symbol) + "</h2></div>" +
       '<div style="text-align:right"><div class="price' + (soft ? " flash" : "") + '">' + fmtP(p) + ' <span style="font-size:13px;color:var(--ink-3)">USDT</span></div>' +
       '<div class="check' + (cc.bad ? " bad" : "") + '">' + cc.text + ' · <a href="' + tv + '" target="_blank" rel="noopener">Open on TradingView</a></div></div></div>' +
       '<div class="badges"><span class="pill ' + r.phase + '">' + r.phase + " phase</span>" +
@@ -770,7 +812,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
         cap ? "fully diluted " + fmtUsd(cap.f) + (cap.f && cap.mc ? " (" + (cap.mc / cap.f * 100).toFixed(0) + "% circulating)" : "") + " · CoinGecko" : "") +
       fact("Volume on Bitget", fmtUsd(t.vol) + " / 24h", "last full day " + (avg20 ? (co.v[n - 1] / avg20).toFixed(2) + "× its 20-day average" : "–") +
         (cap && cap.mc && t.vol ? " · " + (t.vol / cap.mc * 100).toFixed(2) + "% of market cap" : "")) +
-      fact("History", co.c.length + " days", "targets reached within 60 days in " + pct(r.target_hit_rate_hist_pct) + " of past breakouts (" + r.target_stats_source + ")") +
+      fact("History", n + " days", "targets reached within 60 days in " + pct(r.target_hit_rate_hist_pct) + " of past breakouts (" + r.target_stats_source + ")") +
       "</div>" + '<p class="read">' + reading(r) + "</p>" + planHtml(r);
     drawChart(r); lastChartDraw = Date.now();
     wirePlan(r);
@@ -894,6 +936,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
   function drawChart(r) {
     var svg = $("chart"); if (!svg) return;
     var co = r.chart, N = co.c.length, from = Math.max(0, N - 180);
+    if (co.forming) { var lp0 = livePrice(r); co.c[N - 1] = lp0; if (lp0 > co.h[N - 1]) co.h[N - 1] = lp0; if (lp0 < co.l[N - 1]) co.l[N - 1] = lp0; }   // today's candle follows the stream
     var c = { t: [], o: [], h: [], l: [], c: [], m50: [], m200: [], v: [] };
     for (var i = from; i < N; i++) { c.t.push(co.ts[i] / 1000); c.o.push(co.o[i]); c.h.push(co.h[i]); c.l.push(co.l[i]); c.c.push(co.c[i]); c.m50.push(co.sma50[i]); c.m200.push(co.sma200[i]); c.v.push(co.v[i]); }
     var W = svg.clientWidth || 700, H = 460, m = { l: 8, r: 70, t: 14, b: 26 }, volH = 74, gapV = 14, pBot = H - m.b - volH - gapV;
@@ -967,7 +1010,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
       });
     }
     // live price: today's still-forming day, drawn a step to the right of the last closed candle
-    var xl = x(tLast + DAY);
+    var xl = co.forming ? x(tLast) : x(tLast + DAY);   // forming candle: the live dot sits on today's candle
     el("line", { x1: x(tLast), x2: xl, y1: y(c.c[n - 1]), y2: y(live), stroke: css("--ink-3"), "stroke-dasharray": "2 2" });
     el("circle", { cx: xl, cy: y(live), r: 5, fill: css("--live"), stroke: css("--panel"), "stroke-width": 2 });
     txt("live " + fmtP(live), { x: xl + 8, y: y(live) + 4, fill: css("--ink") });
@@ -1022,10 +1065,12 @@ if (typeof module !== "undefined") module.exports = ENGINE;
   });
   // Always on: status line every second, all prices every 10 s, full re-analysis after each daily close.
   setInterval(statusTick, 1000);
+  setInterval(function () { if (!state.busy && state.rows.length && Date.now() - (state.intradayAt || 0) >= INTRADAY_MS) runIntraday(); }, 60 * 1000);
   setInterval(priceRefresh, LIST_REFRESH_MS);
   document.addEventListener("visibilitychange", function () {   // phones pause background tabs; catch up the moment it is visible
     if (document.visibilityState === "visible") {
       priceRefresh();
+      if (state.rows.length && Date.now() - (state.intradayAt || 0) >= INTRADAY_MS) runIntraday();
       if (WS.sock && WS.sock.readyState > 1) { WS.retry = 1000; wsConnect(); }
     }
   });
