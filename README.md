@@ -6,7 +6,8 @@ for the next breakout, the measured move afterwards, volume, market cap, and a B
 Trigger + OCO trade plan for each coin.
 
 Data comes live from the public Bitget, Binance and CoinGecko APIs each time the page is opened;
-prices refresh every 5 minutes. Nothing is stored on a server.
+the open coin streams live, all prices refresh every 10 seconds and the analysis re-runs every
+30 minutes with the current day's candle. Nothing is stored on a server.
 
 This is analysis, not financial advice. The breakout plan shown on the page was backtested and did
 not show an edge; the page says so next to every plan.
