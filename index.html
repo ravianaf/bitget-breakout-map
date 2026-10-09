@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
-/* Live version: the page itself pulls Bitget candles + prices in the viewer's browser and
+/* Live version: the page itself pulls exchange candles + prices in the viewer's browser and
    re-runs the analysis, so it is current wherever it is opened. Layout as the snapshot report. */
 :root {
   color-scheme: light;
@@ -114,6 +114,27 @@ td.r, th.r { text-align: right; }
 .pl .cp { font-size: 11px; padding: 2px 7px; }
 .planfacts { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 13px; color: var(--ink-2); }
 .planfacts b { color: var(--ink); margin-left: 4px; }
+.tfbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); }
+.tfbar .tf { font: 500 12px var(--f-mono); padding: 3px 9px; }
+.tfbar .tf[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tfbar small { margin-left: 6px; }
+.dot-up, .dot-down { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.dot-up { background: var(--up); } .dot-down { background: var(--down); }
+.news { border-top: 1px solid var(--line); padding-top: 14px; display: grid; gap: 8px; }
+.news h3 { font: 600 17px/1.3 var(--f-display); margin: 0; }
+.news ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.newslist { list-style: none; padding-left: 0 !important; }
+.newslist li { display: grid; grid-template-columns: 12px minmax(0, 1fr); column-gap: 8px; font-size: 14px; }
+.newslist li small { grid-column: 2; color: var(--ink-3); font-size: 12px; }
+.newslist a { color: var(--ink); text-decoration: none; } .newslist a:hover { text-decoration: underline; color: var(--accent); }
+.tone { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); margin-top: 7px; display: inline-block; }
+.tone.pos { background: var(--up); } .tone.neg { background: var(--down); }
+.leads { color: var(--ink-2); font-size: 14px; } .leads small { color: var(--ink-3); }
+.newsfoot { margin: 0; font-size: 12px; color: var(--ink-3); max-width: 90ch; }
+.defs { display: grid; grid-template-columns: minmax(150px, 230px) minmax(0, 1fr); gap: 8px 18px; margin: 0; }
+.defs dt { font-weight: 600; color: var(--ink); } .defs dd { margin: 0; }
+@media (max-width: 640px) { .defs { grid-template-columns: minmax(0, 1fr); } .defs dd { margin-bottom: 6px; } }
+.howto { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
 .livepx { font-size: 14px; color: var(--ink-2); padding: 8px 10px; border-radius: 6px; background: var(--accent-soft); }
 .livepx b { color: var(--ink); }
 .sigcard { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 8px 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
@@ -123,9 +144,9 @@ td.r, th.r { text-align: right; }
 <body>
 <div class="wrap">
   <header>
-    <div class="eyebrow" id="asof">Bitget spot · USDT pairs · daily candles</div>
+    <div class="eyebrow" id="asof">Spot · USDT pairs · daily candles</div>
     <h1>Crypto Breakout Map</h1>
-    <p class="sub">Every tradable Bitget coin with enough history, sorted into bull, bear and sideways phases, with its breakout trigger prices, the estimated date window for the next breakout, the measured move after it, volume and market cap. This page pulls the data itself, so it is current whenever it is opened.</p>
+    <p class="sub">Every tradable spot coin with enough history, sorted into bull, bear and sideways phases, with its breakout trigger prices, the estimated date window for the next breakout, the measured move after it, volume and market cap. This page pulls the data itself, so it is current whenever it is opened.</p>
   </header>
 
   <div class="livebar" aria-live="polite">
@@ -148,7 +169,7 @@ td.r, th.r { text-align: right; }
       <div class="filters">
         <input id="q" type="search" placeholder="Search coin, e.g. SOL" autocomplete="off" aria-label="Search coins">
         <select id="fphase" aria-label="Phase"><option value="">All phases</option><option value="bull">Bull</option><option value="sideways">Sideways</option><option value="bear">Bear</option></select>
-        <select id="fstatus" aria-label="Status"><option value="">Any status</option><option value="now">Breaking out now</option><option value="live">Past a trigger today</option><option value="ranging">Still in range</option></select>
+        <select id="fstatus" aria-label="Status"><option value="">Any status</option><option value="above_up">▲ Above the green (up) trigger now</option><option value="below_down">▼ Below the red (down) trigger now</option><option value="near_up">Within 3% under the green trigger</option><option value="near_down">Within 3% above the red trigger</option><option value="broke_up">▲ Broke out up (daily close, last 2 days)</option><option value="broke_down">▼ Broke down (daily close, last 2 days)</option><option value="ranging">Inside the range</option></select>
         <select id="sort" aria-label="Sort"><option value="date">Soonest est. breakout</option><option value="near">Closest to a trigger</option><option value="squeeze">Tightest squeeze</option><option value="vol">Highest 24h volume</option><option value="mcap">Largest market cap</option><option value="az">A to Z</option></select>
       </div>
       <div class="listmeta"><span id="shown"></span><span><button id="copy" type="button">Copy list as CSV</button> <span id="copied" class="copied" aria-live="polite"></span></span></div>
@@ -160,7 +181,7 @@ td.r, th.r { text-align: right; }
       </div>
       <textarea id="csvfallback" hidden rows="6" style="margin:12px;font:12px var(--f-mono);" aria-label="CSV text"></textarea>
     </section>
-    <section class="detail" aria-live="polite" id="detail"><p class="read">Loading candles from Bitget. The first visit on a device takes about a minute; later visits reuse saved candles and take a few seconds.</p></section>
+    <section class="detail" aria-live="polite" id="detail"><p class="read">Loading daily candles. The first visit on a device takes about a minute; later visits reuse saved candles and take a few seconds.</p></section>
   </div>
 
   <section class="truth" aria-labelledby="s-h">
@@ -171,14 +192,55 @@ td.r, th.r { text-align: right; }
   <section class="method" aria-labelledby="m-h">
     <h2 id="m-h">How it is calculated</h2>
     <ul>
-      <li><b>Phase</b> (bull / bear / sideways, the cycle model from the Sarmaaya video): bull = close above the 50-day average, which is above the 200-day average and rising; bear = the mirror image; everything else is sideways, "after decline" (possible accumulation) or "after rise" (possible distribution). Under 200 days of history uses a 100-day average.</li>
+      <li><b>Phase</b> (bull / bear / sideways market cycle): bull = close above the 50-day average, which is above the 200-day average and rising; bear = the mirror image; everything else is sideways, "after decline" (possible accumulation) or "after rise" (possible distribution). Under 200 days of history uses a 100-day average.</li>
       <li><b>Breakout</b> = a daily close (UTC) above the previous 30-day high or below the previous 30-day low. Those two prices are the triggers.</li>
       <li><b>Date window</b>: middle 50% (25th–75th percentile) of how much longer this coin's past quiet stretches lasted once they had lasted as long as the current one; wide window = middle 80%. Too little history → all coins pooled.</li>
       <li><b>Direction</b>: bull → up, bear → down, sideways → whichever half of the range price is in.</li>
       <li><b>Afterwards</b>: measured move (range height projected beyond the trigger, log scale) and the median days past breakouts took to reach it.</li>
       <li><b>Accuracy test</b>: the method re-run as of 60 days ago with only data up to then, scored against what happened.</li>
-      <li><b>Data</b>: Bitget public API (candles, prices, volume), Binance prices for the cross-check, CoinGecko for market cap. Stablecoins and tokenized stocks are excluded. The open coin streams live from Bitget's WebSocket feed and all other prices refresh every 10 seconds. Every 30 minutes the analysis re-runs with today's still-forming candle (phase, breakout status, squeeze, windows, marked provisional); trigger, target and stop prices stay on the last 30 closed days until the 00:00 UTC close, so they match the Telegram bot.</li>
+      <li><b>Data</b>: public exchange data (candles, prices, volume), a second exchange's prices for the cross-check, CoinGecko for market cap, and public crypto news feeds. Stablecoins and tokenized stocks are excluded. The open coin streams live from the exchange's WebSocket feed and all other prices refresh every 10 seconds. Every 30 minutes the analysis re-runs with today's still-forming candle (phase, breakout status, squeeze, windows, marked provisional); trigger, target and stop prices stay on the last 30 closed days until the 00:00 UTC close, so they match the Telegram bot.</li>
     </ul>
+  </section>
+  <section class="method" aria-labelledby="d-h">
+    <h2 id="d-h">What every number means</h2>
+    <dl class="defs">
+      <dt>Phase</dt><dd>The coin's market cycle on daily candles. <b>Bull</b>: price is above its 50-day average, which is above its 200-day average and rising. <b>Bear</b>: the mirror image. <b>Sideways</b>: anything else, labelled "after decline" (possible accumulation) or "after rise" (possible distribution).</dd>
+      <dt>Candles</dt><dd>Each bar is one period: green if it closed higher than it opened, red if lower. The 15m, 1h, 4h and 1W buttons change the view; the analysis itself always uses daily (1D) candles, closing at 00:00 UTC.</dd>
+      <dt>50- and 200-day average</dt><dd>Average closing price over the last 50 and 200 days (periods on other timeframes). Used to decide the phase.</dd>
+      <dt>Green (up) trigger</dt><dd>The highest price of the last 30 days. A daily close above it is a breakout up. It is also the Entry price in the calculator.</dd>
+      <dt>Red (down) trigger</dt><dd>The lowest price of the last 30 days. A daily close below it is a breakdown.</dd>
+      <dt>Status</dt><dd><b>Above the green / below the red trigger now</b>: the live price is past that level today (confirmed only by the daily close). <b>Within 3%</b>: close to a trigger. <b>Broke out / broke down</b>: a daily close beyond the level in the last 2 days. <b>Inside the range</b>: none of these.</dd>
+      <dt>Est. breakout period</dt><dd>The date range in which the next breakout is most likely, from how long this coin's past quiet stretches between breakouts lasted (middle 50% of outcomes). "Most likely" is the middle date; the wide window covers 80%. Shaded on the daily chart.</dd>
+      <dt>Lean</dt><dd>Which side the next breakout leans to: bull phase leans up, bear phase leans down, sideways follows the half of the range the price is in. In testing it was right about 55% of the time.</dd>
+      <dt>Squeeze</dt><dd>How narrow the price range is compared with the past year. A tight squeeze often comes before a breakout, but not always.</dd>
+      <dt>Days since last breakout</dt><dd>How long the coin has stayed inside its 30-day range.</dd>
+      <dt>Target if it breaks up / down</dt><dd>The measured move: the height of the 30-day range projected beyond the trigger (on a log scale). Drawn as the projected move on the daily chart.</dd>
+      <dt>Targets 1, 2, 3</dt><dd>Checkpoints on the way from Entry to the up target: one third, two thirds and the full move. Target 3 is the take-profit.</dd>
+      <dt>Stop Loss</dt><dd>The middle of the 30-day range. A daily close back there means the breakout failed.</dd>
+      <dt>Current price</dt><dd>The live price, streaming for the open coin and refreshed every 10 seconds for the list. The green dot on the chart.</dd>
+      <dt>Coin ranking</dt><dd>Position by market capitalisation (from CoinGecko). Market cap = circulating supply × price; fully diluted = total supply × price.</dd>
+      <dt>Volume</dt><dd>US-dollar value traded in the last 24 hours, and the last full day compared with its 20-day average. The lower chart pane shows volume per candle.</dd>
+      <dt>Cross-check</dt><dd>The price compared with a second exchange. A big gap usually means a thin market or a different token with the same ticker.</dd>
+      <dt>Provisional</dt><dd>Phase, status and windows are re-calculated every 30 minutes with today's unfinished candle; they become final at the 00:00 UTC close. Triggers and the trade plan stay fixed for the day.</dd>
+      <dt>Reward : risk</dt><dd>Distance to Target 3 divided by distance to the stop. 2 : 1 means the target is twice as far as the stop.</dd>
+      <dt>Risk if stopped / Profit at target</dt><dd>What the calculator's position would lose at the stop or gain at Target 3, before fees.</dd>
+      <dt>Accuracy tiles</dt><dd>The same method run as of 60 days ago and checked against what happened since: how often breakouts landed inside the estimated period, how often the lean was right, and how often targets were reached.</dd>
+      <dt>News &amp; summary</dt><dd>Headlines from public crypto news sources in the last 7 days that mention the coin, with a keyword-based tone (green dot positive, red negative, grey neutral).</dd>
+    </dl>
+  </section>
+
+  <section class="method" aria-labelledby="h-h">
+    <h2 id="h-h">How to copy the strategy</h2>
+    <ol class="howto">
+      <li>After the daily close (00:00 UTC), open the page. Filter the status to <b>Within 3% under the green trigger</b>, or sort by <b>Closest to a trigger</b>.</li>
+      <li>Open a coin. Check its phase, estimated breakout period, volume and news. Skip coins that lean down (spot trading cannot short) or that trade very little.</li>
+      <li>In the calculator, enter your account size and the % you are willing to lose per trade (2% is a common choice). The quantity is sized so that hitting the stop costs exactly that.</li>
+      <li><b>Entry</b>: place a spot <b>Trigger order</b>: side Buy, trigger price = Entry (just above the green trigger), order type Market, the calculated quantity.</li>
+      <li><b>Exit</b>: once the buy fills, place a spot <b>OCO</b> sell order for the same quantity: TP limit = Target 3, SL trigger price = Stop Loss, SL price = the SL limit shown (0.5% lower so it fills in a fast drop).</li>
+      <li>Targets 1 and 2 are checkpoints for alerts only; the tested plan does not sell there.</li>
+      <li>If neither the take-profit nor the stop has filled after 30 days, sell at market.</li>
+      <li>Keep a record of every trade and compare it with the tested numbers above. In testing this plan did not show an edge, so treat it as a framework for your own decisions, not a guarantee.</li>
+    </ol>
   </section>
 </div>
 
@@ -516,7 +578,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
   /* ---------- main load / refresh ---------- */
   function fullLoad() {
     if (state.busy) return; state.busy = true; state.lastFull = Date.now();
-    setLive("Loading coin list from Bitget…"); setProg(0.02);
+    setLive("Loading coin list…"); setProg(0.02);
     var syms;
     return loadSymbols().then(function (s) {
       syms = s; return loadTickers();
@@ -534,9 +596,9 @@ if (typeof module !== "undefined") module.exports = ENGINE;
         function (d, n) { setProg(0.05 + 0.85 * d / n); setLive("Loading daily candles: " + d + " of " + n + " coins"); })
         .then(function () {
           if (!failed.length) return;
-          // Bitget throttles bursts from a brand-new visitor; retry the misses slowly
+          // the exchange throttles bursts from a brand-new visitor; retry the misses slowly
           var retry = failed.splice(0);
-          setLive("Retrying " + retry.length + " coins Bitget throttled…");
+          setLive("Retrying " + retry.length + " coins the exchange throttled…");
           return pool(retry, 1, function (s) {
             return new Promise(function (res) { setTimeout(res, 400); }).then(function () { return take(s); }).catch(function () { failed.push(s); });
           }, function (d, n) { setProg(0.9 + 0.08 * d / n); });
@@ -564,7 +626,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     }).catch(function (e) {
       setProg(1);
       state.loadError = e.message;
-      setLive("Could not reach Bitget (" + e.message + "). Retrying automatically…", "err");
+      setLive("Could not reach the exchange (" + e.message + "). Retrying automatically…", "err");
     }).then(function () { state.busy = false; });
   }
   function liveOk() { statusTick(); }
@@ -612,7 +674,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     var age = state.lastRefresh ? Math.round((Date.now() - state.lastRefresh) / 1000) : null;
     var r = state.byS[state.sel], streaming = WS.open && r && WS.subbed === r.id;
     var stale = age === null || age > 45;
-    setLive((stale ? "Reconnecting to Bitget… " : "Live · ") +
+    setLive((stale ? "Reconnecting… " : "Live · ") +
       (streaming ? "streaming " + r.base + " · " : "") + "all prices " + (age === null ? "–" : age + " s ago") + " · " +
       (state.intradayAt ? "analysis " + hhmm(state.intradayAt) + " with today's live candle, next " + hhmm(state.intradayAt + INTRADAY_MS)
                         : (state.intradayBusy ? "updating analysis with today's candle…" : "analysis from the " + fmtDY(state.asOf) + " close")),
@@ -641,7 +703,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     updateSelLive(true);
   }
 
-  /* ---------- streaming the open coin (Bitget public WebSocket) ---------- */
+  /* ---------- streaming the open coin (exchange public WebSocket) ---------- */
   var WS = { sock: null, open: false, subbed: null, want: null, retry: 1000, ping: null };
   function wsSend(o) { try { WS.sock.send(typeof o === "string" ? o : JSON.stringify(o)); } catch (e) {} }
   function wsArg(id) { return { instType: "SPOT", channel: "ticker", instId: id }; }
@@ -686,6 +748,8 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     var p = livePrice(r);
     $("detail").querySelector(".price").firstChild.nodeValue = fmtP(p) + " ";
     var lp = $("livepx"); if (lp) lp.innerHTML = livePxHtml(r, planFor(r));
+    var fp = $("factprice"); if (fp) fp.textContent = fmtP(p);
+    var fn = $("factpricenote"); if (fn) fn.textContent = priceNote(r);
     var la = $("livealert"), ls = liveStatus(r);
     if (la) { la.hidden = !ls; la.textContent = ls ? ls.text : ""; }
     var tr = document.querySelector('#tbody tr.row[data-s="' + r.symbol + '"]');
@@ -700,12 +764,24 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     if (p < r.down_trigger) return { k: "down", text: "Trading below the down trigger now (" + fmtP(r.down_trigger) + "). A daily close below it at 00:00 UTC confirms the breakdown." };
     return null;
   }
+  // Every status a coin is in right now (a coin can be both "above_up" and "broke_up").
+  function statusKey(r) {
+    var p = livePrice(r), keys = [];
+    if (p > r.up_trigger) keys.push("above_up");
+    if (p < r.down_trigger) keys.push("below_down");
+    if (p <= r.up_trigger && r.up_trigger / p - 1 <= 0.03) keys.push("near_up");
+    if (p >= r.down_trigger && 1 - r.down_trigger / p <= 0.03) keys.push("near_down");
+    if (r.status === "breaking up now") keys.push("broke_up");
+    if (r.status === "breaking down now") keys.push("broke_down");
+    if (r.status === "ranging" && p <= r.up_trigger && p >= r.down_trigger) keys.push("ranging");
+    return keys;
+  }
   function nearness(r) { var p = livePrice(r); return Math.min(Math.abs(r.up_trigger / p - 1), Math.abs(p / r.down_trigger - 1)); }
 
   /* ---------- rendering ---------- */
   function renderAll(soft) {
     var s = state.summary, rows = state.rows;
-    $("asof").textContent = "Bitget spot · USDT pairs · daily candles to " + fmtDY(state.asOf) + " · " + rows.length + " coins";
+    $("asof").textContent = "Spot · USDT pairs · daily candles to " + fmtDY(state.asOf) + " · " + rows.length + " coins";
     if (s && s.coins_scored) {
       $("truth-intro").textContent = "The same method was run as it stood on " + fmtDY(s.as_of) + ", using only data up to that day, and scored against what " + s.coins_scored + " coins did in the 60 days since. Recalculated each day from live data.";
       var tiles = [
@@ -727,16 +803,19 @@ if (typeof module !== "undefined") module.exports = ENGINE;
   }
   function renderCounts() {
     var rows = state.rows, ph = { bull: 0, sideways: 0, bear: 0 }, now = 0, live = 0;
-    rows.forEach(function (r) { ph[r.phase] = (ph[r.phase] || 0) + 1; if (r.status !== "ranging") now++; if (liveStatus(r)) live++; });
+    var up = 0, dn = 0;
+    rows.forEach(function (r) { ph[r.phase] = (ph[r.phase] || 0) + 1; if (r.status !== "ranging") now++;
+      var ls = liveStatus(r); if (ls && ls.k === "up") up++; if (ls && ls.k === "down") dn++; });
+    live = up + dn;
     $("counts").innerHTML = "<span><b>" + rows.length + "</b> coins analysed</span><span><b>" + ph.bull + "</b> bull</span><span><b>" + ph.sideways + "</b> sideways</span><span><b>" +
-      ph.bear + "</b> bear</span><span><b>" + now + "</b> broke out in the last 2 days</span><span><b>" + live + "</b> past a trigger right now</span><span><b>" + state.skipped + "</b> too new to analyse</span>" +
+      ph.bear + "</b> bear</span><span><b>" + now + "</b> broke out in the last 2 days</span><span><b>" + up + "</b> above the green trigger now</span><span><b>" + dn + "</b> below the red trigger now</span><span><b>" + state.skipped + "</b> too new to analyse</span>" +
       (state.failed ? "<span><b>" + state.failed + "</b> could not be loaded (retrying automatically)</span>" : "");
   }
   function nextCell(r) {
     var ls = liveStatus(r);
     return r.status !== "ranging"
       ? '<span class="arrow-' + (r.status.indexOf("up") >= 0 ? "up" : "down") + '">' + (r.status.indexOf("up") >= 0 ? "▲ now" : "▼ now") + "</span>"
-      : ls ? '<span class="arrow-' + ls.k + '">' + (ls.k === "up" ? "▲ live" : "▼ live") + "</span>"
+      : ls ? '<span class="arrow-' + ls.k + '">' + (ls.k === "up" ? "▲ above" : "▼ below") + "</span>"
       : '<span class="arrow-' + r.bias + '">' + (r.bias === "up" ? "▲ up" : "▼ down") + "</span>";
   }
   function filtered() {
@@ -744,9 +823,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     var list = state.rows.filter(function (r) {
       if (q && r.symbol.indexOf(q) < 0) return false;
       if (fp && r.phase !== fp) return false;
-      if (fs === "now" && r.status === "ranging") return false;
-      if (fs === "ranging" && r.status !== "ranging") return false;
-      if (fs === "live" && !liveStatus(r)) return false;
+      if (fs && statusKey(r).indexOf(fs) < 0) return false;
       return true;
     });
     var key = {
@@ -773,11 +850,11 @@ if (typeof module !== "undefined") module.exports = ENGINE;
   }
   function crossCheck(r) {
     var p = livePrice(r), b = state.bn[r.id];
-    if (!b) return { text: "Not listed on Binance", bad: false };
+    if (!b) return { text: "Not listed on the second exchange", bad: false };
     var d = (p / b - 1) * 100;
-    if (Math.abs(d) > 20) return { text: "Binance ticker is a different token (" + (d > 0 ? "+" : "") + d.toFixed(0) + "%)", bad: true };
-    if (Math.abs(d) > 1) return { text: "Thin market: " + (d > 0 ? "+" : "") + d.toFixed(1) + "% vs Binance", bad: true };
-    return { text: "Matches Binance (" + (d > 0 ? "+" : "") + d.toFixed(2) + "%)", bad: false };
+    if (Math.abs(d) > 20) return { text: "Second exchange lists a different token under this ticker (" + (d > 0 ? "+" : "") + d.toFixed(0) + "%)", bad: true };
+    if (Math.abs(d) > 1) return { text: "Thin market: " + (d > 0 ? "+" : "") + d.toFixed(1) + "% vs a second exchange", bad: true };
+    return { text: "Matches a second exchange (" + (d > 0 ? "+" : "") + d.toFixed(2) + "%)", bad: false };
   }
   function fact(label, value, note) { return '<div class="fact"><span>' + label + "</span><b>" + value + "</b>" + (note ? "<small>" + note + "</small>" : "") + "</div>"; }
   function select(symbol, soft) {
@@ -787,8 +864,9 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     var r = state.byS[symbol]; if (!r) return;
     var p = livePrice(r), cc = crossCheck(r), cap = matchCap(r), t = state.tick[r.id] || {}, ls = liveStatus(r);
     var now = r.status !== "ranging", mvDays = r.days_to_target_median, upT = r.bo_p50 && isFinite(mvDays) ? addDays(r.bo_p50, mvDays) : null;
-    var co = r.chart, n = co.v.length - (co.forming ? 1 : 0), avg20 = 0; for (var i = Math.max(0, n - 21); i < n - 1; i++) avg20 += co.v[i];   // n: closed days only avg20 /= Math.max(1, Math.min(20, n - 1));
-    var tv = "https://www.tradingview.com/chart/?symbol=BITGET:" + encodeURIComponent(r.base) + "USDT";
+    var co = r.chart, n = co.v.length - (co.forming ? 1 : 0), avg20 = 0; for (var i = Math.max(0, n - 21); i < n - 1; i++) avg20 += co.v[i];
+    avg20 /= Math.max(1, Math.min(20, n - 1));   // n counts closed days only
+    var tv = "https://www.tradingview.com/chart/?symbol=" + encodeURIComponent(r.base) + "USDT";
     $("detail").innerHTML =
       '<div class="dhead"><div><div class="eyebrow">' + esc(r.phase_detail) + (r.provisional && state.intradayAt ? " · as of " + hhmm(state.intradayAt) + ", provisional until the 00:00 UTC close" : "") + "</div><h2>" + esc(r.symbol) + "</h2></div>" +
       '<div style="text-align:right"><div class="price' + (soft ? " flash" : "") + '">' + fmtP(p) + ' <span style="font-size:13px;color:var(--ink-3)">USDT</span></div>' +
@@ -797,23 +875,26 @@ if (typeof module !== "undefined") module.exports = ENGINE;
       '<span class="pill ' + (r.bias === "up" ? "bull" : "bear") + '">' + (now ? r.status : "leans " + r.bias) + "</span>" +
       '<span class="check">' + r.days_since_last_breakout + " days since last breakout · squeeze tighter than " + pct(100 - r.squeeze_pctile) + " of the past year</span></div>" +
       '<div class="alert" id="livealert"' + (ls ? "" : " hidden") + ">" + (ls ? ls.text : "") + "</div>" +
-      '<div class="legend" aria-hidden="true"><span><i style="background:var(--up)"></i>Up candle</span><span><i style="background:var(--down)"></i>Down candle</span>' +
-      '<span><i style="background:var(--sma50);height:2px"></i>50-day avg</span><span><i style="background:var(--sma200);height:2px"></i>200-day avg</span>' +
-      '<span><i style="background:var(--window);opacity:.35"></i>Est. breakout window</span><span><i style="border-top:2px dashed var(--ink-2);height:0;border-radius:0"></i>Projected move</span>' +
-      '<span><i style="background:var(--ink-3);opacity:.45"></i>Daily volume, USD (lower pane)</span></div>' +
-      '<div class="chartbox"><svg id="chart" role="img" aria-label="Daily price chart for ' + esc(r.symbol) + ' with breakout levels, projection and volume"></svg><div class="tip" id="tip" hidden></div></div>' +
+      '<div class="tfbar" role="group" aria-label="Chart timeframe"><span>Candles</span>' +
+        TFS.map(function (k) { return '<button type="button" class="tf" data-tf="' + k + '" aria-pressed="' + (k === state.tf) + '">' + k + "</button>"; }).join("") +
+        '<small>' + (state.tf === "1D" ? "Analysis uses daily candles." : "Levels below come from the daily analysis.") + "</small></div>" +
+      '<div class="legend" aria-hidden="true" id="legend">' + legendHtml() + "</div>" +
+      '<div class="chartbox"><svg id="chart" role="img" aria-label="Price chart for ' + esc(r.symbol) + ' with breakout levels, projection and volume"></svg><div class="tip" id="tip" hidden></div></div>' +
       '<div class="facts">' +
-      fact("Up trigger (daily close above)", fmtP(r.up_trigger), ((r.up_trigger / p - 1) * 100).toFixed(1) + "% above the current price") +
-      fact("Down trigger (daily close below)", fmtP(r.down_trigger), ((1 - r.down_trigger / p) * 100).toFixed(1) + "% below the current price") +
-      fact("Estimated breakout", now ? "Happening now" : fmtDY(r.bo_p25) + " – " + fmtDY(r.bo_p75), now ? "" : "most likely around " + fmtDY(r.bo_p50) + "; wide window " + fmtD(r.bo_p10) + " – " + fmtD(r.bo_p90)) +
+      fact("Current price", '<span id="factprice">' + fmtP(p) + "</span> USDT", '<span id="factpricenote">' + priceNote(r) + "</span>") +
+      fact("Coin ranking", cap && cap.r ? "#" + cap.r + " by market cap" : (Object.keys(state.cg).length ? "Not ranked" : "Loading…"),
+        cap ? "market cap " + fmtUsd(cap.mc) + " · fully diluted " + fmtUsd(cap.f) + (cap.f && cap.mc ? " (" + (cap.mc / cap.f * 100).toFixed(0) + "% circulating)" : "") : "outside the top 2,000 or not matched") +
+      fact("Est. breakout period", now ? "Happening now" : fmtDY(r.bo_p25) + " – " + fmtDY(r.bo_p75), now ? "broke out in the last 2 days" : "most likely around " + fmtDY(r.bo_p50) + "; wide window " + fmtD(r.bo_p10) + " – " + fmtD(r.bo_p90)) +
+      fact('<i class="dot-up"></i>Green (up) trigger', fmtP(r.up_trigger), "daily close above it = breakout up · " + ((r.up_trigger / p - 1) * 100).toFixed(1) + "% from now") +
+      fact('<i class="dot-down"></i>Red (down) trigger', fmtP(r.down_trigger), "daily close below it = breakdown · " + ((1 - r.down_trigger / p) * 100).toFixed(1) + "% below now") +
       fact("Target if it breaks up", fmtP(r.up_target), "+" + ((r.up_target / p - 1) * 100).toFixed(1) + "% from now" + (upT ? ", typically by " + fmtDY(upT) : "")) +
       fact("Target if it breaks down", fmtP(r.down_target), ((r.down_target / p - 1) * 100).toFixed(1) + "% from now") +
-      fact("Market cap", cap ? fmtUsd(cap.mc) + (cap.r ? " · #" + cap.r : "") : (Object.keys(state.cg).length ? "Not found" : "Loading…"),
-        cap ? "fully diluted " + fmtUsd(cap.f) + (cap.f && cap.mc ? " (" + (cap.mc / cap.f * 100).toFixed(0) + "% circulating)" : "") + " · CoinGecko" : "") +
-      fact("Volume on Bitget", fmtUsd(t.vol) + " / 24h", "last full day " + (avg20 ? (co.v[n - 1] / avg20).toFixed(2) + "× its 20-day average" : "–") +
+      fact("Volume (24h)", fmtUsd(t.vol), "last full day " + (avg20 ? (co.v[n - 1] / avg20).toFixed(2) + "× its 20-day average" : "–") +
         (cap && cap.mc && t.vol ? " · " + (t.vol / cap.mc * 100).toFixed(2) + "% of market cap" : "")) +
       fact("History", n + " days", "targets reached within 60 days in " + pct(r.target_hit_rate_hist_pct) + " of past breakouts (" + r.target_stats_source + ")") +
-      "</div>" + '<p class="read">' + reading(r) + "</p>" + planHtml(r);
+      "</div>" + '<p class="read">' + reading(r) + "</p>" +
+      '<section class="news" id="newsbox" aria-labelledby="news-h">' + newsHtml(r) + "</section>" +
+      planHtml(r);
     drawChart(r); lastChartDraw = Date.now();
     wirePlan(r);
     wsWatch(r.id);                      // stream this coin from now on
@@ -834,7 +915,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
   }
   setInterval(function () { if (!WS.open) liveSel(); }, 15000);   // fallback only while the stream is down
 
-  /* ---------- trade plan: Bitget spot Trigger entry + OCO exit ---------- */
+  /* ---------- trade plan: spot Trigger entry + OCO exit ---------- */
   var SIZING = { acct: 100, risk: 2 };
   try { var sv = JSON.parse(localStorage.getItem("cbm-sizing") || "null"); if (sv && sv.acct > 0 && sv.risk > 0) SIZING = sv; } catch (e) {}
   function roundTo(x, dp, mode) {
@@ -860,8 +941,11 @@ if (typeof module !== "undefined") module.exports = ENGINE;
   }
   function signalTextFor(r, P) {
     var f = function (x) { return x.toFixed(P.pp); };
-    return "#" + r.symbol + " - Long🟢\n\nEntry: " + f(P.entry) + "\nStop Loss: " + f(P.slTrig) +
-      "\n\nTarget 1: " + f(P.t1) + "\nTarget 2: " + f(P.t2) + "\nTarget 3: " + f(P.tp);
+    var pc = function (x) { return ((x / P.entry - 1) * 100).toFixed(2) + "%"; };
+    var est = r.status !== "ranging" ? "breakout in progress" : fmtRange(r.bo_p25, r.bo_p75) + " (most likely " + fmtD(r.bo_p50) + ")";
+    return "#" + r.symbol + " - Long🟢\n\nCurrent price: " + fmtP(livePrice(r)) + "\nEntry: " + f(P.entry) + "\nStop Loss: " + f(P.slTrig) + " (" + pc(P.slTrig) + ")" +
+      "\n\nTarget 1: " + f(P.t1) + " (+" + pc(P.t1) + ")\nTarget 2: " + f(P.t2) + " (+" + pc(P.t2) + ")\nTarget 3: " + f(P.tp) + " (+" + pc(P.tp) + ")" +
+      "\n\nEst. breakout period: " + est;
   }
   function livePxHtml(r, P) {
     var t = state.tick[r.id] || {}, live = livePrice(r), d = (P.entry / live - 1) * 100;
@@ -876,11 +960,11 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     var qtyTxt = P.qty.toFixed(isFinite(r.qp) ? r.qp : 4);
     var warn = [];
     if (r.status.indexOf("up") >= 0 || live >= P.entry) warn.push("Price is already above the entry. Placing a buy trigger now would fill at once, which means chasing an extended move; the plan assumes you wait for the next setup or accept a worse reward/risk.");
-    if (r.bias === "down") warn.push("This coin leans down. Bitget spot cannot short, so the only plan is the long one below, and an up-breakout is the less likely outcome here.");
-    if (P.tooSmall) warn.push("At this account size and risk the order is below Bitget's minimum of " + (r.minUsdt || 1) + " USDT.");
+    if (r.bias === "down") warn.push("This coin leans down. Spot trading cannot short, so the only plan is the long one below, and an up-breakout is the less likely outcome here.");
+    if (P.tooSmall) warn.push("At this account size and risk the order is below the exchange minimum of " + (r.minUsdt || 1) + " USDT.");
     if (P.capped) warn.push("Size capped at your whole account; the stop is wide relative to your risk setting, so actual risk is " + fmtUsd(P.riskUsd) + ".");
     return '<section class="plan" aria-labelledby="plan-h">' +
-      '<div class="planhead"><h3 id="plan-h">Trade plan for Bitget spot</h3>' +
+      '<div class="planhead"><h3 id="plan-h">Trade plan (spot)</h3>' +
       '<div class="sizing"><label for="acct">Account (USDT)</label><input id="acct" type="number" min="1" step="1" value="' + SIZING.acct + '">' +
       '<label for="riskp">Risk per trade (%)</label><input id="riskp" type="number" min="0.1" max="100" step="0.1" value="' + SIZING.risk + '"></div></div>' +
       '<div class="livepx" id="livepx" aria-live="polite">' + livePxHtml(r, P) + "</div>" +
@@ -933,45 +1017,151 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     var side = r.bias === "up" ? "a daily close above " + fmtP(r.up_trigger) : "a daily close below " + fmtP(r.down_trigger);
     return base + " is in a " + r.phase + " phase and has gone " + r.days_since_last_breakout + " days without a breakout. Its history puts the next one most likely between " + fmtDY(r.bo_p25) + " and " + fmtDY(r.bo_p75) + ". The lean is " + r.bias + ", so the signal to watch for is " + side + ". Either trigger can fire; set alerts on both. Window based on " + (r.window_source === "coin" ? "this coin's own history." : "all coins' history, because this coin has too little.");
   }
+  /* ---------- chart timeframes: analysis is daily; other timeframes are for viewing ---------- */
+  var TFS = ["15m", "1h", "4h", "1D", "1W"];
+  var TF_GRAN = { "15m": "15min", "1h": "1h", "4h": "4h", "1W": "1Wutc" };
+  var TF_SEC = { "15m": 900, "1h": 3600, "4h": 14400, "1D": 86400, "1W": 604800 };
+  state.tf = "1D"; state.tfData = {};
+  try { var savedTf = localStorage.getItem("cbm-tf"); if (TFS.indexOf(savedTf) >= 0) state.tf = savedTf; } catch (e) {}
+  function sma(arr, w) {
+    var out = [], s = 0;
+    for (var i = 0; i < arr.length; i++) { s += arr[i]; if (i >= w) s -= arr[i - w]; out.push(i >= w - 1 ? s / w : null); }
+    return out;
+  }
+  function loadTf(r, force) {
+    var tf = state.tf, key = r.id + "|" + tf;
+    if (tf === "1D" || state.tfLoading === key || (!force && state.tfData[key])) return;
+    state.tfLoading = key;
+    getJSON(API + "/market/candles?symbol=" + encodeURIComponent(r.id) + "&granularity=" + TF_GRAN[tf] + "&limit=300", 2).then(function (j) {
+      var k = parseRaw(j.data).sort(function (a, b) { return a[0] - b[0]; });
+      var cl = k.map(function (x) { return x[4]; });
+      state.tfData[key] = { t: k.map(function (x) { return x[0] / 1000; }), o: k.map(function (x) { return x[1]; }), h: k.map(function (x) { return x[2]; }),
+        l: k.map(function (x) { return x[3]; }), c: cl, v: k.map(function (x) { return x[5]; }), m50: sma(cl, 50), m200: sma(cl, 200), at: Date.now() };
+      var cur = state.byS[state.sel];
+      if (cur && cur.id === r.id && state.tf === tf) drawChart(cur);
+    }).catch(function () {}).then(function () { if (state.tfLoading === key) state.tfLoading = null; });
+  }
+  setInterval(function () { var r = state.byS[state.sel]; if (r && state.tf !== "1D" && document.visibilityState === "visible") loadTf(r, true); }, 60 * 1000);
+  function legendHtml() {
+    var d = state.tf === "1D", per = d ? "day" : "period";
+    return '<span><i style="background:var(--up)"></i>Up candle</span><span><i style="background:var(--down)"></i>Down candle</span>' +
+      '<span><i style="background:var(--sma50);height:2px"></i>50-' + per + ' avg</span><span><i style="background:var(--sma200);height:2px"></i>200-' + per + ' avg</span>' +
+      '<span><i class="dot-up"></i>Green (up) trigger</span><span><i class="dot-down"></i>Red (down) trigger</span>' +
+      (d ? '<span><i style="background:var(--window);opacity:.35"></i>Est. breakout period</span><span><i style="border-top:2px dashed var(--ink-2);height:0;border-radius:0"></i>Projected move</span>' : "") +
+      '<span><i style="background:var(--ink-3);opacity:.45"></i>Volume per candle, USD (lower pane)</span>';
+  }
+  function setTf(tf) {
+    state.tf = tf;
+    try { localStorage.setItem("cbm-tf", tf); } catch (e) {}
+    document.querySelectorAll(".tf").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.tf === tf)); });
+    var note = document.querySelector(".tfbar small"); if (note) note.textContent = tf === "1D" ? "Analysis uses daily candles." : "Levels below come from the daily analysis.";
+    var lg = $("legend"); if (lg) lg.innerHTML = legendHtml();
+    var r = state.byS[state.sel]; if (!r) return;
+    drawChart(r);
+    if (tf !== "1D") loadTf(r, false);
+  }
+  function priceNote(r) {
+    var p = livePrice(r);
+    if (p > r.up_trigger) return "above the green trigger by " + ((p / r.up_trigger - 1) * 100).toFixed(2) + "%";
+    if (p < r.down_trigger) return "below the red trigger by " + ((1 - p / r.down_trigger) * 100).toFixed(2) + "%";
+    return ((r.up_trigger / p - 1) * 100).toFixed(2) + "% under the green trigger · " + ((1 - r.down_trigger / p) * 100).toFixed(2) + "% above the red";
+  }
+
+  /* ---------- news: built every 30 min by the repo's scheduled job (news.json, same site) ---------- */
+  state.news = null;
+  function loadNews() {
+    return fetch("news.json?t=" + Math.floor(Date.now() / 300000)).then(function (r) { if (!r.ok) throw new Error("http " + r.status); return r.json(); })
+      .then(function (d) { state.news = d; var r = state.byS[state.sel]; if (r && $("newsbox")) $("newsbox").innerHTML = newsHtml(r); })
+      .catch(function () { state.news = state.news || { failed: true, items: [] }; var r = state.byS[state.sel]; if (r && $("newsbox")) $("newsbox").innerHTML = newsHtml(r); });
+  }
+  setInterval(loadNews, 15 * 60 * 1000);
+  function ago(ts) {
+    var m = Math.max(0, Math.round((Date.now() / 1000 - ts) / 60));
+    return m < 60 ? m + " min ago" : m < 1440 ? Math.round(m / 60) + " h ago" : Math.round(m / 1440) + " d ago";
+  }
+  function firstSentence(t) { var m = String(t || "").match(/^.{30,220}?[.!?](\s|$)/); return m ? m[0].trim() : String(t || "").slice(0, 200); }
+  function newsHtml(r) {
+    var head = '<h3 id="news-h">News &amp; summary: ' + esc(r.base) + "</h3>";
+    if (!state.news) return head + '<p class="read">Loading news…</p>';
+    if (state.news.failed) return head + '<p class="read">News is collected on the hosted page and could not be loaded here.</p>';
+    var all = state.news.items || [], now = Date.now() / 1000;
+    var mine = all.filter(function (i) { return (i.coins || []).indexOf(r.base) >= 0; });
+    var list = function (items) {
+      return '<ul class="newslist">' + items.map(function (i) {
+        var tone = i.tone > 0 ? '<i class="tone pos" title="positive keywords"></i>' : i.tone < 0 ? '<i class="tone neg" title="negative keywords"></i>' : '<i class="tone" title="neutral"></i>';
+        return "<li>" + tone + '<a href="' + esc(i.link) + '" target="_blank" rel="noopener">' + esc(i.title) + "</a><small>" + esc(i.src) + " · " + ago(i.ts) + "</small></li>";
+      }).join("") + "</ul>";
+    };
+    var foot = '<p class="newsfoot">Collected ' + esc(state.news.generated || "") + " from " + (state.news.sources || []).length +
+      " public crypto news sources; matched by ticker or project name, so a few items may be loosely related. Tone is keyword-based.</p>";
+    if (!mine.length) {
+      var market = all.filter(function (i) { return !(i.coins || []).length || (i.coins || []).indexOf("BTC") >= 0; }).slice(0, 5);
+      return head + '<p class="read"><b>No articles mentioned ' + esc(r.base) + " in the last 7 days.</b> Latest market headlines instead:</p>" + list(market) + foot;
+    }
+    var d1 = mine.filter(function (i) { return now - i.ts < 86400; }).length;
+    var pos = mine.filter(function (i) { return i.tone > 0; }).length, neg = mine.filter(function (i) { return i.tone < 0; }).length;
+    var mood = pos > neg * 1.5 ? "mostly positive" : neg > pos * 1.5 ? "mostly negative" : "mixed";
+    var leads = mine.slice(0, 3).map(function (i) { return "<li>" + esc(firstSentence(i.desc || i.title)) + " <small>(" + esc(i.src) + ", " + ago(i.ts) + ")</small></li>"; }).join("");
+    return head + '<p class="read"><b>' + mine.length + " article" + (mine.length > 1 ? "s" : "") + " in the last 7 days</b> (" + d1 + " in the last 24 h). Headline tone is " + mood +
+      ": " + pos + " positive, " + neg + " negative, " + (mine.length - pos - neg) + " neutral.</p>" +
+      '<p class="read"><b>Summary of the latest coverage:</b></p><ul class="leads">' + leads + "</ul>" + list(mine.slice(0, 8)) + foot;
+  }
+
   function drawChart(r) {
     var svg = $("chart"); if (!svg) return;
-    var co = r.chart, N = co.c.length, from = Math.max(0, N - 180);
-    if (co.forming) { var lp0 = livePrice(r); co.c[N - 1] = lp0; if (lp0 > co.h[N - 1]) co.h[N - 1] = lp0; if (lp0 < co.l[N - 1]) co.l[N - 1] = lp0; }   // today's candle follows the stream
-    var c = { t: [], o: [], h: [], l: [], c: [], m50: [], m200: [], v: [] };
-    for (var i = from; i < N; i++) { c.t.push(co.ts[i] / 1000); c.o.push(co.o[i]); c.h.push(co.h[i]); c.l.push(co.l[i]); c.c.push(co.c[i]); c.m50.push(co.sma50[i]); c.m200.push(co.sma200[i]); c.v.push(co.v[i]); }
+    var daily = state.tf === "1D", live = livePrice(r), c, barSec = TF_SEC[state.tf], forming = false, i;
     var W = svg.clientWidth || 700, H = 460, m = { l: 8, r: 70, t: 14, b: 26 }, volH = 74, gapV = 14, pBot = H - m.b - volH - gapV;
     svg.setAttribute("viewBox", "0 0 " + W + " " + H); svg.innerHTML = "";
+    function el(tag, at) { var e = document.createElementNS(NS, tag); for (var k in at) e.setAttribute(k, at[k]); svg.appendChild(e); return e; }
+    function txt(s, at) { var a = { "font-family": css("--f-mono"), "font-size": 11, fill: css("--ink-3") }; for (var k in at) a[k] = at[k]; var e = el("text", a); e.textContent = s; return e; }
+    if (daily) {
+      var co = r.chart, N = co.c.length, from = Math.max(0, N - 180);
+      if (co.forming) { co.c[N - 1] = live; if (live > co.h[N - 1]) co.h[N - 1] = live; if (live < co.l[N - 1]) co.l[N - 1] = live; }   // today's candle follows the stream
+      forming = !!co.forming;
+      c = { t: [], o: [], h: [], l: [], c: [], m50: [], m200: [], v: [] };
+      for (i = from; i < N; i++) { c.t.push(co.ts[i] / 1000); c.o.push(co.o[i]); c.h.push(co.h[i]); c.l.push(co.l[i]); c.c.push(co.c[i]); c.m50.push(co.sma50[i]); c.m200.push(co.sma200[i]); c.v.push(co.v[i]); }
+    } else {
+      c = state.tfData[r.id + "|" + state.tf];
+      if (!c) { txt("Loading " + state.tf + " candles…", { x: W / 2, y: H / 2, "text-anchor": "middle", fill: css("--ink-2"), "font-size": 13 }); loadTf(r, false); return; }
+      var k0 = c.c.length - 1;
+      if (c.t[k0] + barSec > Date.now() / 1000) { forming = true; c.c[k0] = live; if (live > c.h[k0]) c.h[k0] = live; if (live < c.l[k0]) c.l[k0] = live; }
+    }
     var n = c.t.length, t0 = c.t[0], tLast = c.t[n - 1], now = r.status !== "ranging";
     var p50 = toTs(r.bo_p50), mv = isFinite(r.days_to_target_median) ? r.days_to_target_median : 14;
-    var tEndProj = p50 ? p50 + mv * DAY : tLast + 30 * DAY;
-    var t1 = Math.max(tLast + 30 * DAY, toTs(r.bo_p90) || 0, tEndProj) + 6 * DAY;
+    var t1 = daily ? Math.max(tLast + 30 * DAY, toTs(r.bo_p90) || 0, p50 ? p50 + mv * DAY : 0) + 6 * DAY
+                   : tLast + barSec * Math.max(6, Math.round(n * 0.08));
     var x = function (t) { return m.l + (t - t0) / (t1 - t0) * (W - m.l - m.r); };
-    var live = livePrice(r);
     var vals = []; for (i = 0; i < n; i++) { vals.push(c.h[i]); if (c.l[i] > 0) vals.push(c.l[i]); }
-    vals.push(r.up_target, r.down_target, live);
+    vals.push(live, r.up_trigger, r.down_trigger);
+    if (daily) vals.push(r.up_target, r.down_target);
     var lo = Math.min.apply(null, vals.filter(function (v) { return v > 0; })), hi = Math.max.apply(null, vals);
     var L0 = Math.log(lo) - 0.03, L1 = Math.log(hi) + 0.03;
     var y = function (p) { return m.t + (L1 - Math.log(p)) / (L1 - L0) * (pBot - m.t); };
     var vmax = Math.max.apply(null, [1].concat(c.v)), yv = function (v) { return H - m.b - (v / vmax) * volH; };
-    function el(tag, at) { var e = document.createElementNS(NS, tag); for (var k in at) e.setAttribute(k, at[k]); svg.appendChild(e); return e; }
-    function txt(s, at) { var a = { "font-family": css("--f-mono"), "font-size": 11, fill: css("--ink-3") }; for (var k in at) a[k] = at[k]; var e = el("text", a); e.textContent = s; return e; }
     for (var k = 0; k <= 5; k++) {
       var pv = Math.exp(L0 + (L1 - L0) * (0.04 + 0.92 * k / 5));
       el("line", { x1: m.l, x2: W - m.r, y1: y(pv), y2: y(pv), stroke: css("--line-2"), "stroke-width": 1 });
       txt(fmtP(Number(pv.toPrecision(3))), { x: W - m.r + 6, y: y(pv) + 4 });
     }
-    var d0 = new Date(t0 * 1000);
-    for (var d = new Date(Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth() + 1, 1)); d.getTime() / 1000 < t1; d.setUTCMonth(d.getUTCMonth() + 1)) {
-      var xx = x(d.getTime() / 1000);
-      el("line", { x1: xx, x2: xx, y1: m.t, y2: H - m.b, stroke: css("--line-2") });
-      txt(MON[d.getUTCMonth()], { x: xx + 3, y: H - 8 });
+    // time ticks scaled to the span: months, days or hours (UTC)
+    var span = t1 - t0, d0 = new Date(t0 * 1000), d, xx;
+    if (span > 120 * DAY) {
+      for (d = new Date(Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth() + 1, 1)); d.getTime() / 1000 < t1; d.setUTCMonth(d.getUTCMonth() + 1)) {
+        xx = x(d.getTime() / 1000); el("line", { x1: xx, x2: xx, y1: m.t, y2: H - m.b, stroke: css("--line-2") });
+        txt(MON[d.getUTCMonth()] + (d.getUTCMonth() === 0 ? " " + d.getUTCFullYear() : ""), { x: xx + 3, y: H - 8 });
+      }
+    } else {
+      var stepS = span > 20 * DAY ? 7 * DAY : span > 6 * DAY ? 2 * DAY : span > 2 * DAY ? DAY : span > 12 * 3600 ? 6 * 3600 : 3 * 3600;
+      for (var tt = Math.ceil(t0 / stepS) * stepS; tt < t1; tt += stepS) {
+        xx = x(tt); d = new Date(tt * 1000); el("line", { x1: xx, x2: xx, y1: m.t, y2: H - m.b, stroke: css("--line-2") });
+        txt(stepS >= DAY ? d.getUTCDate() + " " + MON[d.getUTCMonth()] : String(d.getUTCHours()).padStart(2, "0") + ":00", { x: xx + 3, y: H - 8 });
+      }
     }
-    if (!now && r.bo_p10) {
+    if (daily && !now && r.bo_p10) {
       el("rect", { x: x(toTs(r.bo_p10)), y: m.t, width: Math.max(1, x(toTs(r.bo_p90)) - x(toTs(r.bo_p10))), height: pBot - m.t, fill: css("--window"), "fill-opacity": 0.08 });
       el("rect", { x: x(toTs(r.bo_p25)), y: m.t, width: Math.max(2, x(toTs(r.bo_p75)) - x(toTs(r.bo_p25))), height: pBot - m.t, fill: css("--window"), "fill-opacity": 0.22 });
-      // label sits at the bottom of the price pane, anchored inside the plot so it never clips or meets the target labels
-      var wl = x(toTs(r.bo_p25)) + 4, wtxt = "est. breakout " + fmtRange(r.bo_p25, r.bo_p75);
-      txt(wtxt, { x: Math.min(wl, W - m.r - 4), y: pBot - 6, fill: css("--ink-2"), "text-anchor": wl > W - m.r - 150 ? "end" : "start" });
+      var wl = x(toTs(r.bo_p25)) + 4;
+      txt("est. breakout " + fmtRange(r.bo_p25, r.bo_p75), { x: Math.min(wl, W - m.r - 4), y: pBot - 6, fill: css("--ink-2"), "text-anchor": wl > W - m.r - 150 ? "end" : "start" });
     }
     el("line", { x1: x(tLast), x2: x(tLast), y1: m.t, y2: H - m.b, stroke: css("--ink-3"), "stroke-dasharray": "2 3" });
     function path(arr, color) {
@@ -991,15 +1181,16 @@ if (typeof module !== "undefined") module.exports = ENGINE;
       var yt = y(Math.max(c.o[i], c.c[i])), yb = y(Math.min(c.o[i], c.c[i]));
       el("rect", { x: xx - bw / 2, y: yt, width: bw, height: Math.max(1, yb - yt), fill: col, rx: bw > 4 ? 1 : 0 });
     }
+    var hx = daily ? x(tLast - 30 * DAY) : x(t0);
     function hline(p, color, label) {
-      el("line", { x1: x(tLast - 30 * DAY), x2: W - m.r, y1: y(p), y2: y(p), stroke: color, "stroke-width": 1.5, "stroke-dasharray": "5 4" });
+      el("line", { x1: hx, x2: W - m.r, y1: y(p), y2: y(p), stroke: color, "stroke-width": 1.5, "stroke-dasharray": "5 4" });
       el("rect", { x: W - m.r + 2, y: y(p) - 9, width: m.r - 4, height: 17, rx: 3, fill: css("--panel"), stroke: color });
       txt(fmtP(Number(p.toPrecision(4))), { x: W - m.r + 6, y: y(p) + 4, fill: css("--ink") });
-      txt(label, { x: x(tLast - 30 * DAY) + 2, y: y(p) - 5, fill: css("--ink-2") });
+      txt(label, { x: hx + 2, y: y(p) - 5, fill: css("--ink-2") });
     }
-    hline(r.up_trigger, upC, "up trigger"); hline(r.down_trigger, dnC, "down trigger");
+    hline(r.up_trigger, upC, "green trigger (up)"); hline(r.down_trigger, dnC, "red trigger (down)");
     var startT = now ? tLast : p50;
-    if (startT) {
+    if (daily && startT) {
       var leanUp = now ? r.status.indexOf("up") >= 0 : r.bias === "up";
       [[r.up_trigger, r.up_target, upC, leanUp], [r.down_trigger, r.down_target, dnC, !leanUp]].forEach(function (a) {
         var from = a[0], to = a[1], color = a[2], lean = a[3], xe = x(startT + mv * DAY);
@@ -1009,11 +1200,10 @@ if (typeof module !== "undefined") module.exports = ENGINE;
         txt("target " + fmtP(Number(to.toPrecision(4))), { x: xe - 9, y: ty, fill: css("--ink"), "text-anchor": "end" });
       });
     }
-    // live price: today's still-forming day, drawn a step to the right of the last closed candle
-    var xl = co.forming ? x(tLast) : x(tLast + DAY);   // forming candle: the live dot sits on today's candle
+    var xl = forming ? x(tLast) : x(tLast + barSec);     // live dot sits on the forming candle
     el("line", { x1: x(tLast), x2: xl, y1: y(c.c[n - 1]), y2: y(live), stroke: css("--ink-3"), "stroke-dasharray": "2 2" });
     el("circle", { cx: xl, cy: y(live), r: 5, fill: css("--live"), stroke: css("--panel"), "stroke-width": 2 });
-    txt("live " + fmtP(live), { x: xl + 8, y: y(live) + 4, fill: css("--ink") });
+    txt("live " + fmtP(live), { x: Math.min(xl + 8, W - m.r - 80), y: y(live) + 4, fill: css("--ink") });
     var cross = el("line", { x1: 0, x2: 0, y1: m.t, y2: H - m.b, stroke: css("--ink-3"), "stroke-width": 1, visibility: "hidden" });
     var hit = el("rect", { x: m.l, y: m.t, width: Math.max(1, x(tLast) - m.l + step / 2), height: H - m.t - m.b, fill: "transparent" });
     var tip = $("tip");
@@ -1021,13 +1211,15 @@ if (typeof module !== "undefined") module.exports = ENGINE;
       var pt = svg.getBoundingClientRect(), sx = (ev.clientX - pt.left) * (W / pt.width);
       var i = Math.max(0, Math.min(n - 1, Math.round((sx - x(t0)) / step))), xx = x(c.t[i]);
       cross.setAttribute("x1", xx); cross.setAttribute("x2", xx); cross.setAttribute("visibility", "visible");
-      var dt = new Date(c.t[i] * 1000).toISOString().slice(0, 10);
-      tip.innerHTML = fmtDY(dt) + "<br>O " + fmtP(c.o[i]) + "  H " + fmtP(c.h[i]) + "<br>L " + fmtP(c.l[i]) + "  C " + fmtP(c.c[i]) + "<br>Vol " + fmtUsd(c.v[i]);
+      var dt = new Date(c.t[i] * 1000), iso = dt.toISOString();
+      var when = barSec >= DAY ? fmtDY(iso.slice(0, 10)) : fmtD(iso.slice(0, 10)) + " " + iso.slice(11, 16) + " UTC";
+      tip.innerHTML = when + "<br>O " + fmtP(c.o[i]) + "  H " + fmtP(c.h[i]) + "<br>L " + fmtP(c.l[i]) + "  C " + fmtP(c.c[i]) + "<br>Vol " + fmtUsd(c.v[i]);
       tip.hidden = false;
       tip.style.left = Math.min(pt.width - 170, Math.max(0, xx * (pt.width / W) + 12)) + "px"; tip.style.top = "8px";
     });
     hit.addEventListener("pointerleave", function () { cross.setAttribute("visibility", "hidden"); tip.hidden = true; });
   }
+
   function copyCsv() {
     var cols = ["symbol", "price", "phase", "status", "bias", "up_trigger", "down_trigger", "up_target", "down_target", "bo_p25", "bo_p50", "bo_p75", "days_since_last_breakout", "market_cap"];
     var lines = [cols.join(",")].concat(filtered().map(function (r) {
@@ -1050,6 +1242,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     }
   }
   $("tbody").addEventListener("click", function (e) { var tr = e.target.closest("tr.row"); if (tr) pick(tr); });
+  $("detail").addEventListener("click", function (e) { var b = e.target.closest("button.tf"); if (b) setTf(b.dataset.tf); });
   $("tbody").addEventListener("keydown", function (e) { var tr = e.target.closest("tr.row"); if (tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); pick(tr); } });
   $("copy").addEventListener("click", copyCsv);
   var lastW = 0;
@@ -1075,6 +1268,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     }
   });
   wsConnect();
+  loadNews();
   fullLoad();
 })();
 </script>
