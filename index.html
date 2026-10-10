@@ -442,6 +442,26 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     return x.getUTCMonth() === y.getUTCMonth() ? x.getUTCDate() + "–" + y.getUTCDate() + " " + MON[y.getUTCMonth()] : fmtD(a) + "–" + fmtD(b);
   }
   function fmtDY(iso) { if (!iso) return "–"; var d = new Date(iso + "T00:00:00Z"); return d.getUTCDate() + " " + MON[d.getUTCMonth()] + " " + d.getUTCFullYear(); }
+  function fmtDur(sec) {
+    var h = sec / 3600;
+    return h < 48 ? Math.round(h) + " hours" : h < 24 * 21 ? Math.round(h / 24) + " days" : Math.round(h / 168) + " weeks";
+  }
+  function fmtTs(sec, withTime, year) {   // UTC
+    var d = new Date(sec * 1000);
+    return d.getUTCDate() + " " + MON[d.getUTCMonth()] + (year || d.getUTCFullYear() !== new Date().getUTCFullYear() ? " " + d.getUTCFullYear() : "") + (withTime ? " " + String(d.getUTCHours()).padStart(2, "0") + ":" + String(d.getUTCMinutes()).padStart(2, "0") : "");
+  }
+  // estimated breakout period of a row or a timeframe view, as text and as timestamps (seconds)
+  function estTs(r, pc) { return r.modeTf ? (r.winTs ? r.winTs[pc] : null) : toTs(r["bo_p" + pc]); }
+  function estIntraday(r) { return r.modeTf && TF_SEC[r.modeTf] < 86400; }
+  function estText(r, pc, year) { var v = estTs(r, pc); return v ? fmtTs(v, estIntraday(r), year) : "–"; }
+  function estRange(r, a, b, year) {
+    if (!estTs(r, a)) return "–";
+    if (!r.modeTf) return year ? fmtDY(r["bo_p" + a]) + " – " + fmtDY(r["bo_p" + b]) : fmtRange(r["bo_p" + a], r["bo_p" + b]);
+    return estText(r, a, year) + " – " + estText(r, b, year) + (estIntraday(r) ? " UTC" : "");
+  }
+  function estMissing(r) {
+    return r.winSrc === "loading" ? "Calculating…" : "Not enough history";
+  }
   function addDays(iso, n) { var d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + Math.round(n)); return d.toISOString().slice(0, 10); }
   function hhmm(ms) { return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
   function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
@@ -872,7 +892,8 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     if (!r) r = r0;                      // strategy candles still loading (or too little history): show daily levels
     if (r.modeTf) state.modeBar = r.barAt - TF_SEC[r.modeTf];
     var p = livePrice(r), cc = crossCheck(r), cap = matchCap(r), t = state.tick[r.id] || {}, ls = liveStatus(r);
-    var now = r.status !== "ranging", mvDays = r.days_to_target_median, upT = r.bo_p50 && isFinite(mvDays) ? addDays(r.bo_p50, mvDays) : null;
+    var now = r.status !== "ranging", mvDays = r.days_to_target_median, upT = r.modeTf ? (estTs(r, 50) && isFinite(r.mvSec) ? fmtTs(estTs(r, 50) + r.mvSec, estIntraday(r), true) + (estIntraday(r) ? " UTC" : "") : null)
+      : r.bo_p50 && isFinite(mvDays) ? fmtDY(addDays(r.bo_p50, mvDays)) : null;
     var co = r.chart, n = co.v.length - (co.forming ? 1 : 0), avg20 = 0; for (var i = Math.max(0, n - 21); i < n - 1; i++) avg20 += co.v[i];
     avg20 /= Math.max(1, Math.min(20, n - 1));   // n counts closed days only
     var tv = "https://www.tradingview.com/chart/?symbol=" + encodeURIComponent(r.base) + "USDT";
@@ -890,17 +911,20 @@ if (typeof module !== "undefined") module.exports = ENGINE;
         STRATS[state.mode].test + ". The 1D strategy is the main one and the one the Telegram bot trades." + (modeWait ? " <i>" + modeWait + "</i>" : "") + "</div>" : "") +
       '<div class="tfbar" role="group" aria-label="Chart timeframe"><span>Candles</span>' +
         TFS.map(function (k) { return '<button type="button" class="tf" data-tf="' + k + '" aria-pressed="' + (k === state.tf) + '">' + k + "</button>"; }).join("") +
-        '<small>' + (state.tf === "1D" ? "Analysis uses daily candles." : "Levels below come from the daily analysis.") + "</small></div>" +
+        '<small>' + tfNote() + "</small></div>" +
       '<div class="legend" aria-hidden="true" id="legend">' + legendHtml() + "</div>" +
       '<div class="chartbox"><svg id="chart" role="img" aria-label="Price chart for ' + esc(r.symbol) + ' with breakout levels, projection and volume"></svg><div class="tip" id="tip" hidden></div></div>' +
       '<div class="facts">' +
       fact("Current price", '<span id="factprice">' + fmtP(p) + "</span> USDT", '<span id="factpricenote">' + priceNote(r) + "</span>") +
       fact("Coin ranking", cap && cap.r ? "#" + cap.r + " by market cap" : (Object.keys(state.cg).length ? "Not ranked" : "Loading…"),
         cap ? "market cap " + fmtUsd(cap.mc) + " · fully diluted " + fmtUsd(cap.f) + (cap.f && cap.mc ? " (" + (cap.mc / cap.f * 100).toFixed(0) + "% circulating)" : "") : "outside the top 2,000 or not matched") +
-      fact("Est. breakout period", r.modeTf ? "Not estimated on " + r.modeTf : now ? "Happening now" : fmtDY(r.bo_p25) + " – " + fmtDY(r.bo_p75), r.modeTf ? "the estimate needs daily history" : now ? "broke out in the last 2 days" : "most likely around " + fmtDY(r.bo_p50) + "; wide window " + fmtD(r.bo_p10) + " – " + fmtD(r.bo_p90)) +
+      fact("Est. breakout period", now ? "Happening now" : estTs(r, 25) ? estRange(r, 25, 75, !r.modeTf) : r.modeTf ? estMissing(r) : "–",
+        now ? "broke out in the last 2 " + (r.modeTf ? "closed " + r.modeTf + " candles" : "days") : !estTs(r, 25) ? (r.modeTf && r.winSrc === "loading" ? "reading " + r.modeTf + " candles of " + POOL_COINS + " coins" : "too few past breakouts to estimate")
+          : "most likely around " + estText(r, 50, !r.modeTf) + "; wide window " + estRange(r, 10, 90) +
+            (r.modeTf ? " · " + r.sinceText + " since the last " + r.modeTf + " breakout, compared with quiet stretches on " + r.poolN + " coins" : "")) +
       fact('<i class="dot-up"></i>Green (up) trigger', fmtP(r.up_trigger), (r.modeTf ? r.modeTf + " close" : "daily close") + " above it = breakout up · " + ((r.up_trigger / p - 1) * 100).toFixed(1) + "% from now") +
       fact('<i class="dot-down"></i>Red (down) trigger', fmtP(r.down_trigger), (r.modeTf ? r.modeTf + " close" : "daily close") + " below it = breakdown · " + ((1 - r.down_trigger / p) * 100).toFixed(1) + "% below now") +
-      fact("Target if it breaks up", fmtP(r.up_target), "+" + ((r.up_target / p - 1) * 100).toFixed(1) + "% from now" + (upT ? ", typically by " + fmtDY(upT) : "")) +
+      fact("Target if it breaks up", fmtP(r.up_target), "+" + ((r.up_target / p - 1) * 100).toFixed(1) + "% from now" + (upT ? ", typically by " + upT : "")) +
       fact("Target if it breaks down", fmtP(r.down_target), ((r.down_target / p - 1) * 100).toFixed(1) + "% from now") +
       fact("Volume (24h)", fmtUsd(t.vol), "last full day " + (avg20 ? (co.v[n - 1] / avg20).toFixed(2) + "× its 20-day average" : "–") +
         (cap && cap.mc && t.vol ? " · " + (t.vol / cap.mc * 100).toFixed(2) + "% of market cap" : "")) +
@@ -955,7 +979,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
   function signalTextFor(r, P) {
     var f = function (x) { return x.toFixed(P.pp); };
     var pc = function (x) { return ((x / P.entry - 1) * 100).toFixed(2) + "%"; };
-    var est = r.status !== "ranging" ? "breakout in progress" : r.modeTf ? "not estimated on " + r.modeTf : fmtRange(r.bo_p25, r.bo_p75) + " (most likely " + fmtD(r.bo_p50) + ")";
+    var est = r.status !== "ranging" ? "breakout in progress" : estTs(r, 25) ? estRange(r, 25, 75) + " (most likely " + estText(r, 50) + ")" + (r.modeTf ? ", " + r.modeTf + " candles" : "") : "not estimated";
     return "#" + r.symbol + " - BUY🟢\n\nCurrent price: " + fmtP(livePrice(r)) + "\nEntry: " + f(P.entry) + "\nStop Loss: " + f(P.slTrig) + " (" + pc(P.slTrig) + ")" +
       "\n\nTarget 1: " + f(P.t1) + " (+" + pc(P.t1) + ")\nTarget 2: " + f(P.t2) + " (+" + pc(P.t2) + ")\nTarget 3: " + f(P.tp) + " (+" + pc(P.tp) + ")" +
       "\n\nEst. breakout period: " + est;
@@ -1033,7 +1057,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
       var sp = STRATS[r.modeTf].adj, tf = r.modeTf;
       return r.status !== "ranging"
         ? base + " closed a " + tf + " candle beyond its " + sp + " range (" + r.status.replace("breaking ", "") + "). Watch whether the next " + tf + " closes hold beyond " + fmtP(r.status.indexOf("up") >= 0 ? r.up_trigger : r.down_trigger) + "."
-        : base + " is inside its " + sp + " range on " + tf + " candles. A " + tf + " close above " + fmtP(r.up_trigger) + " is a breakout up; below " + fmtP(r.down_trigger) + " a breakdown. The daily trend is " + r.phase + ".";
+        : base + " is inside its " + sp + " range on " + tf + " candles. A " + tf + " close above " + fmtP(r.up_trigger) + " is a breakout up; below " + fmtP(r.down_trigger) + " a breakdown." + (estTs(r, 25) ? " After " + r.sinceText + " without a " + tf + " breakout, the next one is most likely between " + estText(r, 25) + " and " + estText(r, 50 + 25) + (estIntraday(r) ? " UTC" : "") + "." : "") + " The daily trend is " + r.phase + ".";
     }
     if (r.status !== "ranging") return base + " closed beyond its 30-day range in the last two days (" + r.status.replace("breaking ", "") + "). Watch whether the next daily closes hold beyond " + fmtP(r.status.indexOf("up") >= 0 ? r.up_trigger : r.down_trigger) + "; a close back inside the range would make it a false breakout.";
     var side = r.bias === "up" ? "a daily close above " + fmtP(r.up_trigger) : "a daily close below " + fmtP(r.down_trigger);
@@ -1054,7 +1078,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     var tf = tfArg || state.tf, key = r.id + "|" + tf;
     if (tf === "1D" || state.tfLoading === key || (!force && state.tfData[key])) return;
     state.tfLoading = key;
-    getJSON(API + "/market/candles?symbol=" + encodeURIComponent(r.id) + "&granularity=" + TF_GRAN[tf] + "&limit=300", 2).then(function (j) {
+    getJSON(API + "/market/candles?symbol=" + encodeURIComponent(r.id) + "&granularity=" + TF_GRAN[tf] + "&limit=1000", 2).then(function (j) {
       var k = parseRaw(j.data).sort(function (a, b) { return a[0] - b[0]; });
       var cl = k.map(function (x) { return x[4]; });
       state.tfData[key] = { t: k.map(function (x) { return x[0] / 1000; }), o: k.map(function (x) { return x[1]; }), h: k.map(function (x) { return x[2]; }),
@@ -1088,24 +1112,87 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     if (d.t[k] + TF_SEC[tf] > Date.now() / 1000) k--;     // drop the still-forming candle
     return k;
   }
+  /* Estimated breakout period on a timeframe: the daily method (time since the last breakout vs past quiet
+     stretches longer than that) with the quiet stretches pooled from 40 high-volume coins on the same timeframe.
+     Checked 2026-10-10 (run_breakout_window_tf_test.py, Mar-Oct 2026): the next breakout landed inside the main
+     window 42% / 50% / 51% of the time on 15m / 1h / 4h (ideal 50%) and inside the wide window 72% / 77% / 80%
+     (ideal 80%). A single coin's own 1000 candles hold too few stretches (55-71% inside the wide window). */
+  function tfNote() {
+    var sm = state.mode === "1D" ? "the daily (1D)" : "the " + state.mode;
+    return state.tf === state.mode ? "Levels and estimate from " + sm + " strategy." : "Levels and estimate below come from " + sm + " strategy.";
+  }
+  var TF_MIN_STRETCH = 3;              // the engine's MIN_STRETCH (that script has its own scope)
+  function qtl(sorted, p) { var i = (sorted.length - 1) * p / 100, lo = Math.floor(i), hi = Math.min(lo + 1, sorted.length - 1); return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo); }
+  var POOL_COINS = 40, POOL_MAX_AGE = 60 * 60 * 1000;
+  state.tfPools = {};
+  function tfEvents(d, N, upto) {
+    var ev = [], i, k;
+    for (i = N; i <= upto; i++) {
+      var mx = -Infinity, mn = Infinity;
+      for (k = i - N; k < i; k++) { if (d.h[k] > mx) mx = d.h[k]; if (d.l[k] < mn) mn = d.l[k]; }
+      if (d.c[i] > mx) ev.push([i, 1, mx, mn]); else if (d.c[i] < mn) ev.push([i, -1, mx, mn]);
+    }
+    return ev;
+  }
+  function tfStretches(d, N, upto) {      // quiet stretches and candles-to-target after fresh breakouts
+    var ev = tfEvents(d, N, upto), gaps = [], mv = [], j, k;
+    for (j = 1; j < ev.length; j++) { var g = ev[j][0] - ev[j - 1][0] - 1; if (g >= TF_MIN_STRETCH) gaps.push(g); }
+    for (j = 0; j < ev.length; j++) {
+      var e = ev[j], i = e[0];
+      if ((j && i - ev[j - 1][0] <= TF_MIN_STRETCH) || i + N > upto) continue;
+      var tgt = e[1] > 0 ? e[2] * e[2] / e[3] : e[3] * e[3] / e[2];
+      for (k = i + 1; k <= i + N; k++) if (e[1] > 0 ? d.h[k] >= tgt : d.l[k] <= tgt) { mv.push(k - i); break; }
+    }
+    return { ev: ev, gaps: gaps, mv: mv };
+  }
+  function buildPool(tf) {
+    var P = state.tfPools[tf];
+    if (!state.rows.length || (P && (P.loading || Date.now() - P.at < POOL_MAX_AGE))) return;
+    state.tfPools[tf] = { loading: true, gaps: P ? P.gaps : [], mv: P ? P.mv : [], at: P ? P.at : 0, n: P ? P.n : 0 };
+    var coins = state.rows.slice().sort(function (x, y) { return ((state.tick[y.id] || {}).vol || 0) - ((state.tick[x.id] || {}).vol || 0); }).slice(0, POOL_COINS);
+    var gaps = [], mv = [], ok = 0, N = STRATS[tf].box;
+    pool(coins, 4, function (r) {
+      return getJSON(API + "/market/candles?symbol=" + encodeURIComponent(r.id) + "&granularity=" + TF_GRAN[tf] + "&limit=1000", 2).then(function (j) {
+        var k = parseRaw(j.data).sort(function (a, b) { return a[0] - b[0]; });
+        var d = { t: k.map(function (x) { return x[0] / 1000; }), h: k.map(function (x) { return x[2]; }), l: k.map(function (x) { return x[3]; }), c: k.map(function (x) { return x[4]; }) };
+        var t = lastClosedTf(d, tf); if (t < N + 20) return;
+        var st = tfStretches(d, N, t); gaps = gaps.concat(st.gaps); mv = mv.concat(st.mv); ok++;
+      });
+    }).then(function () {
+      state.tfPools[tf] = { loading: false, gaps: gaps.sort(function (a, b) { return a - b; }), mv: mv, at: ok ? Date.now() : 0, n: ok };      // nothing loaded: try again on the next view
+      state.viewCache = {};
+      var sel = state.byS[state.sel];
+      if (sel && state.mode === tf && !document.querySelector(".plan input:focus")) select(sel.symbol, true);
+    });
+  }
+  state.viewCache = {};
   function view(r) {
     if (!r || state.mode === "1D") return r;
-    var tf = state.mode, S = STRATS[tf], d = state.tfData[r.id + "|" + tf];
+    var tf = state.mode, S = STRATS[tf], d = state.tfData[r.id + "|" + tf], sec = TF_SEC[tf];
     if (!d) { loadTf(r, false, tf); return null; }
     var t = lastClosedTf(d, tf), N = S.box;
     if (t < N + 2) return null;                            // not enough history on this timeframe
+    buildPool(tf);
+    var P = state.tfPools[tf] || { gaps: [], mv: [], n: 0, at: 0 }, ck = r.id + "|" + tf + "|" + d.at + "|" + t + "|" + (P.at || 0);
+    if (state.viewCache[ck]) return state.viewCache[ck];
     var hi = -Infinity, lo = Infinity, i;
     for (i = t - N + 1; i <= t; i++) { if (d.h[i] > hi) hi = d.h[i]; if (d.l[i] < lo) lo = d.l[i]; }
-    var status = "ranging";
-    for (var back = 0; back < 2; back++) {                 // a close beyond the previous range in the last 2 candles
-      var e = t - back, ph = -Infinity, pl = Infinity;
-      for (i = e - N; i < e; i++) { if (d.h[i] > ph) ph = d.h[i]; if (d.l[i] < pl) pl = d.l[i]; }
-      if (d.c[e] > ph) { status = "breaking up now"; break; }
-      if (d.c[e] < pl) { status = "breaking down now"; break; }
+    var ev = tfEvents(d, N, t), last = ev.length ? ev[ev.length - 1] : null;
+    var status = last && t - last[0] <= 1 ? (last[1] > 0 ? "breaking up now" : "breaking down now") : "ranging";   // within the last 2 closed candles
+    var q = last ? t - last[0] : t - N, barAt = d.t[t] + sec, win = null, src = P.n ? "pool" : "loading";
+    if (P.n) {
+      var longer = P.gaps.filter(function (g) { return g > q; });
+      if (longer.length >= 5) {
+        var rem = longer.map(function (g) { return g - q; });   // already sorted
+        win = {}; [10, 25, 50, 75, 90].forEach(function (pc) { win[pc] = barAt + Math.round(qtl(rem, pc)) * sec; });
+      } else src = "insufficient";
     }
-    return Object.assign({}, r, { modeTf: tf, up_trigger: hi, down_trigger: lo, up_target: hi * hi / lo, down_target: lo * lo / hi,
+    var mvS = P.mv.slice().sort(function (x, y) { return x - y; }), mvBars = mvS.length >= 3 ? qtl(mvS, 50) : NaN;
+    var out = Object.assign({}, r, { modeTf: tf, up_trigger: hi, down_trigger: lo, up_target: hi * hi / lo, down_target: lo * lo / hi,
       status: status, bo_p10: null, bo_p25: null, bo_p50: null, bo_p75: null, bo_p90: null, days_to_target_median: NaN,
-      barAt: d.t[t] + TF_SEC[tf] });
+      barAt: barAt, winTs: win, winSrc: src, barsSince: q, sinceText: fmtDur(q * sec), mvSec: Math.round(mvBars) * sec, poolN: P.n });
+    state.viewCache = {}; state.viewCache[ck] = out;
+    return out;
   }
   function cur() { var r = state.byS[state.sel]; return view(r) || r; }
   function setMode(mode) {
@@ -1133,7 +1220,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     state.tf = tf;
     try { localStorage.setItem("cbm-tf", tf); } catch (e) {}
     document.querySelectorAll(".tf").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.tf === tf)); });
-    var note = document.querySelector(".tfbar small"); if (note) note.textContent = tf === "1D" ? "Analysis uses daily candles." : "Levels below come from the daily analysis.";
+    var note = document.querySelector(".tfbar small"); if (note) note.textContent = tfNote();
     var lg = $("legend"); if (lg) lg.innerHTML = legendHtml();
     var r = state.byS[state.sel]; if (!r) return;
     drawChart(cur());
@@ -1201,6 +1288,10 @@ if (typeof module !== "undefined") module.exports = ENGINE;
       for (i = from; i < N; i++) { c.t.push(co.ts[i] / 1000); c.o.push(co.o[i]); c.h.push(co.h[i]); c.l.push(co.l[i]); c.c.push(co.c[i]); c.m50.push(co.sma50[i]); c.m200.push(co.sma200[i]); c.v.push(co.v[i]); }
     } else {
       c = state.tfData[r.id + "|" + state.tf];
+      if (c && c.t.length > 300) {
+        var cut = c.t.length - 300, sl = function (a) { return a.slice(cut); };
+        c = { t: sl(c.t), o: sl(c.o), h: sl(c.h), l: sl(c.l), c: sl(c.c), v: sl(c.v), m50: sl(c.m50), m200: sl(c.m200) };
+      }
       if (!c) { txt("Loading " + state.tf + " candles…", { x: W / 2, y: H / 2, "text-anchor": "middle", fill: css("--ink-2"), "font-size": 13 }); loadTf(r, false); return; }
       var k0 = c.c.length - 1;
       if (c.t[k0] + barSec > Date.now() / 1000) { forming = true; c.c[k0] = live; if (live > c.h[k0]) c.h[k0] = live; if (live < c.l[k0]) c.l[k0] = live; }
@@ -1209,6 +1300,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     var p50 = toTs(r.bo_p50), mv = isFinite(r.days_to_target_median) ? r.days_to_target_median : 14;
     var t1 = daily ? Math.max(tLast + 30 * DAY, toTs(r.bo_p90) || 0, p50 ? p50 + mv * DAY : 0) + 6 * DAY
                    : tLast + barSec * Math.max(6, Math.round(n * 0.08));
+    if (!daily && !now && estTs(r, 90) && estTs(r, 10) > tLast && estTs(r, 90) - tLast < (tLast - t0) * 1.2) t1 = Math.max(t1, estTs(r, 90) + barSec * 4);   // window fits beside the candles
     var x = function (t) { return m.l + (t - t0) / (t1 - t0) * (W - m.l - m.r); };
     var vals = []; for (i = 0; i < n; i++) { vals.push(c.h[i]); if (c.l[i] > 0) vals.push(c.l[i]); }
     vals.push(live, r.up_trigger, r.down_trigger);
@@ -1236,11 +1328,11 @@ if (typeof module !== "undefined") module.exports = ENGINE;
         txt(stepS >= DAY ? d.getUTCDate() + " " + MON[d.getUTCMonth()] : String(d.getUTCHours()).padStart(2, "0") + ":00", { x: xx + 3, y: H - 8 });
       }
     }
-    if (daily && !now && r.bo_p10) {
-      el("rect", { x: x(toTs(r.bo_p10)), y: m.t, width: Math.max(1, x(toTs(r.bo_p90)) - x(toTs(r.bo_p10))), height: pBot - m.t, fill: css("--window"), "fill-opacity": 0.08 });
-      el("rect", { x: x(toTs(r.bo_p25)), y: m.t, width: Math.max(2, x(toTs(r.bo_p75)) - x(toTs(r.bo_p25))), height: pBot - m.t, fill: css("--window"), "fill-opacity": 0.22 });
-      var wl = x(toTs(r.bo_p25)) + 4;
-      txt("est. breakout " + fmtRange(r.bo_p25, r.bo_p75), { x: Math.min(wl, W - m.r - 4), y: pBot - 6, fill: css("--ink-2"), "text-anchor": wl > W - m.r - 150 ? "end" : "start" });
+    if (!now && estTs(r, 10) && estTs(r, 90) <= t1 && estTs(r, 10) >= t0) {
+      el("rect", { x: x(estTs(r, 10)), y: m.t, width: Math.max(1, x(estTs(r, 90)) - x(estTs(r, 10))), height: pBot - m.t, fill: css("--window"), "fill-opacity": 0.08 });
+      el("rect", { x: x(estTs(r, 25)), y: m.t, width: Math.max(2, x(estTs(r, 75)) - x(estTs(r, 25))), height: pBot - m.t, fill: css("--window"), "fill-opacity": 0.22 });
+      var wl = x(estTs(r, 25)) + 4, wlab = "est. breakout " + (r.modeTf ? estRange(r, 25, 75) : fmtRange(r.bo_p25, r.bo_p75));
+      txt(wlab, { x: Math.min(wl, W - m.r - 4), y: pBot - 6, fill: css("--ink-2"), "text-anchor": wl > W - m.r - wlab.length * 7 ? "end" : "start" });
     }
     el("line", { x1: x(tLast), x2: x(tLast), y1: m.t, y2: H - m.b, stroke: css("--ink-3"), "stroke-dasharray": "2 3" });
     function path(arr, color) {
