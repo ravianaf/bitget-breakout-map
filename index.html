@@ -118,6 +118,10 @@ td.r, th.r { text-align: right; }
 .tfbar .tf { font: 500 12px var(--f-mono); padding: 3px 9px; }
 .tfbar .tf[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
 .tfbar small { margin-left: 6px; }
+.modebar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); }
+.modebar .mode { font-size: 13px; padding: 4px 10px; }
+.modebar .mode[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--panel); }
+.warn15 { border-color: var(--warn); }
 .dot-up, .dot-down { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
 .dot-up { background: var(--up); } .dot-down { background: var(--down); }
 .news { border-top: 1px solid var(--line); padding-top: 14px; display: grid; gap: 8px; }
@@ -205,6 +209,7 @@ td.r, th.r { text-align: right; }
     <h2 id="d-h">What every number means</h2>
     <dl class="defs">
       <dt>Phase</dt><dd>The coin's market cycle on daily candles. <b>Bull</b>: price is above its 50-day average, which is above its 200-day average and rising. <b>Bear</b>: the mirror image. <b>Sideways</b>: anything else, labelled "after decline" (possible accumulation) or "after rise" (possible distribution).</dd>
+      <dt>Strategy switch</dt><dd><b>Daily breakout (tested)</b>: levels from the last 30 daily candles; this is the strategy the backtests and the Telegram bot use. <b>15m breakout (intraday)</b>: the same rules on 15-minute candles with a 48-hour range, for watching intraday moves on the open coin. It lost money in testing because fees eat most of the small 15m moves.</dd>
       <dt>Candles</dt><dd>Each bar is one period: green if it closed higher than it opened, red if lower. The 15m, 1h, 4h and 1W buttons change the view; the analysis itself always uses daily (1D) candles, closing at 00:00 UTC.</dd>
       <dt>50- and 200-day average</dt><dd>Average closing price over the last 50 and 200 days (periods on other timeframes). Used to decide the phase.</dd>
       <dt>Green (up) trigger</dt><dd>The highest price of the last 30 days. A daily close above it is a breakout up. It is also the Entry price in the calculator.</dd>
@@ -744,7 +749,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     selTimer = setTimeout(function () { selTimer = null; updateSelLive(false); }, 1000);
   }
   function updateSelLive(fromList) {
-    var r = state.byS[state.sel]; if (!r || !document.querySelector(".detail .price")) return;
+    var r = cur(); if (!r || !document.querySelector(".detail .price")) return;
     var p = livePrice(r);
     $("detail").querySelector(".price").firstChild.nodeValue = fmtP(p) + " ";
     var lp = $("livepx"); if (lp) lp.innerHTML = livePxHtml(r, planFor(r));
@@ -861,7 +866,10 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     state.sel = symbol;
     document.querySelectorAll("tr.row").forEach(function (tr) { tr.classList.toggle("sel", tr.dataset.s === symbol); });
     try { history.replaceState(null, "", "#" + symbol.replace("/", "")); } catch (e) {}
-    var r = state.byS[symbol]; if (!r) return;
+    var r0 = state.byS[symbol]; if (!r0) return;
+    var r = view(r0), loading15 = state.mode === "15m" && !r;
+    if (!r) r = r0;                      // 15m candles still loading: show daily levels until they arrive
+    if (r.mode15) state.mode15Bar = lastClosed15(state.tfData[r.id + "|15m"]);
     var p = livePrice(r), cc = crossCheck(r), cap = matchCap(r), t = state.tick[r.id] || {}, ls = liveStatus(r);
     var now = r.status !== "ranging", mvDays = r.days_to_target_median, upT = r.bo_p50 && isFinite(mvDays) ? addDays(r.bo_p50, mvDays) : null;
     var co = r.chart, n = co.v.length - (co.forming ? 1 : 0), avg20 = 0; for (var i = Math.max(0, n - 21); i < n - 1; i++) avg20 += co.v[i];
@@ -875,6 +883,12 @@ if (typeof module !== "undefined") module.exports = ENGINE;
       '<span class="pill ' + (r.bias === "up" ? "bull" : "bear") + '">' + (now ? r.status : "leans " + r.bias) + "</span>" +
       '<span class="check">' + r.days_since_last_breakout + " days since last breakout · squeeze tighter than " + pct(100 - r.squeeze_pctile) + " of the past year</span></div>" +
       '<div class="alert" id="livealert"' + (ls ? "" : " hidden") + ">" + (ls ? ls.text : "") + "</div>" +
+      '<div class="modebar" role="group" aria-label="Strategy"><span>Strategy</span>' +
+        '<button type="button" class="mode" data-mode="1D" aria-pressed="' + (state.mode !== "15m") + '">Daily breakout (tested)</button>' +
+        '<button type="button" class="mode" data-mode="15m" aria-pressed="' + (state.mode === "15m") + '">15m breakout (intraday)</button></div>' +
+      (state.mode === "15m" ? '<div class="alert warn15"><b>15m breakout: intraday levels to watch, not a tested strategy.</b> The same rules on 15-minute candles (48-hour range) lost money in testing: ' +
+        '449 coins, Mar–Oct 2026, 0.3% fees per round trip, about 40% of trades won and the average was about 0.00% per trade (−0.04% without the 10 biggest wins); shorter ranges did worse. ' +
+        'Fees eat most of the small 15m moves. The daily strategy is the tested one.' + (loading15 ? ' <i>Loading 15m candles…</i>' : '') + '</div>' : '') +
       '<div class="tfbar" role="group" aria-label="Chart timeframe"><span>Candles</span>' +
         TFS.map(function (k) { return '<button type="button" class="tf" data-tf="' + k + '" aria-pressed="' + (k === state.tf) + '">' + k + "</button>"; }).join("") +
         '<small>' + (state.tf === "1D" ? "Analysis uses daily candles." : "Levels below come from the daily analysis.") + "</small></div>" +
@@ -884,14 +898,14 @@ if (typeof module !== "undefined") module.exports = ENGINE;
       fact("Current price", '<span id="factprice">' + fmtP(p) + "</span> USDT", '<span id="factpricenote">' + priceNote(r) + "</span>") +
       fact("Coin ranking", cap && cap.r ? "#" + cap.r + " by market cap" : (Object.keys(state.cg).length ? "Not ranked" : "Loading…"),
         cap ? "market cap " + fmtUsd(cap.mc) + " · fully diluted " + fmtUsd(cap.f) + (cap.f && cap.mc ? " (" + (cap.mc / cap.f * 100).toFixed(0) + "% circulating)" : "") : "outside the top 2,000 or not matched") +
-      fact("Est. breakout period", now ? "Happening now" : fmtDY(r.bo_p25) + " – " + fmtDY(r.bo_p75), now ? "broke out in the last 2 days" : "most likely around " + fmtDY(r.bo_p50) + "; wide window " + fmtD(r.bo_p10) + " – " + fmtD(r.bo_p90)) +
-      fact('<i class="dot-up"></i>Green (up) trigger', fmtP(r.up_trigger), "daily close above it = breakout up · " + ((r.up_trigger / p - 1) * 100).toFixed(1) + "% from now") +
-      fact('<i class="dot-down"></i>Red (down) trigger', fmtP(r.down_trigger), "daily close below it = breakdown · " + ((1 - r.down_trigger / p) * 100).toFixed(1) + "% below now") +
+      fact("Est. breakout period", r.mode15 ? "Not estimated on 15m" : now ? "Happening now" : fmtDY(r.bo_p25) + " – " + fmtDY(r.bo_p75), r.mode15 ? "the estimate needs daily history" : now ? "broke out in the last 2 days" : "most likely around " + fmtDY(r.bo_p50) + "; wide window " + fmtD(r.bo_p10) + " – " + fmtD(r.bo_p90)) +
+      fact('<i class="dot-up"></i>Green (up) trigger', fmtP(r.up_trigger), (r.mode15 ? "15m close" : "daily close") + " above it = breakout up · " + ((r.up_trigger / p - 1) * 100).toFixed(1) + "% from now") +
+      fact('<i class="dot-down"></i>Red (down) trigger', fmtP(r.down_trigger), (r.mode15 ? "15m close" : "daily close") + " below it = breakdown · " + ((1 - r.down_trigger / p) * 100).toFixed(1) + "% below now") +
       fact("Target if it breaks up", fmtP(r.up_target), "+" + ((r.up_target / p - 1) * 100).toFixed(1) + "% from now" + (upT ? ", typically by " + fmtDY(upT) : "")) +
       fact("Target if it breaks down", fmtP(r.down_target), ((r.down_target / p - 1) * 100).toFixed(1) + "% from now") +
       fact("Volume (24h)", fmtUsd(t.vol), "last full day " + (avg20 ? (co.v[n - 1] / avg20).toFixed(2) + "× its 20-day average" : "–") +
         (cap && cap.mc && t.vol ? " · " + (t.vol / cap.mc * 100).toFixed(2) + "% of market cap" : "")) +
-      fact("History", n + " days", "targets reached within 60 days in " + pct(r.target_hit_rate_hist_pct) + " of past breakouts (" + r.target_stats_source + ")") +
+      fact(r.mode15 ? "Range" : "History", r.mode15 ? "48 hours (192 × 15m)" : n + " days", r.mode15 ? "levels from the 15m candles to " + new Date(r.bar15At * 1000 + 900000).toISOString().slice(11, 16) + " UTC" : "targets reached within 60 days in " + pct(r.target_hit_rate_hist_pct) + " of past breakouts (" + r.target_stats_source + ")") +
       "</div>" + '<p class="read">' + reading(r) + "</p>" +
       '<section class="news" id="newsbox" aria-labelledby="news-h">' + newsHtml(r) + "</section>" +
       planHtml(r);
@@ -942,7 +956,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
   function signalTextFor(r, P) {
     var f = function (x) { return x.toFixed(P.pp); };
     var pc = function (x) { return ((x / P.entry - 1) * 100).toFixed(2) + "%"; };
-    var est = r.status !== "ranging" ? "breakout in progress" : fmtRange(r.bo_p25, r.bo_p75) + " (most likely " + fmtD(r.bo_p50) + ")";
+    var est = r.status !== "ranging" ? "breakout in progress" : r.mode15 ? "not estimated on 15m" : fmtRange(r.bo_p25, r.bo_p75) + " (most likely " + fmtD(r.bo_p50) + ")";
     return "#" + r.symbol + " - BUY🟢\n\nCurrent price: " + fmtP(livePrice(r)) + "\nEntry: " + f(P.entry) + "\nStop Loss: " + f(P.slTrig) + " (" + pc(P.slTrig) + ")" +
       "\n\nTarget 1: " + f(P.t1) + " (+" + pc(P.t1) + ")\nTarget 2: " + f(P.t2) + " (+" + pc(P.t2) + ")\nTarget 3: " + f(P.tp) + " (+" + pc(P.tp) + ")" +
       "\n\nEst. breakout period: " + est;
@@ -983,9 +997,13 @@ if (typeof module !== "undefined") module.exports = ENGINE;
       '<div class="planfacts"><span>Reward : risk <b class="num">' + (isFinite(P.rr) ? P.rr.toFixed(2) : "–") + " : 1</b></span>" +
       "<span>Risk if stopped <b class=\"num\">" + fmtUsd(P.riskUsd) + "</b></span><span>Profit at target <b class=\"num\">" + fmtUsd(P.rewardUsd) + "</b></span>" +
       "<span>Fees, both legs ≈ <b class=\"num\">" + fmtUsd(P.fee) + "</b></span></div>" +
-      "<p class=\"read\">Exit rule: whichever OCO leg fills first cancels the other. Targets 1 and 2 are checkpoints for alerts, not sells. If neither OCO leg has filled 30 days after entry, sell at market.</p>" +
+      "<p class=\"read\">Exit rule: whichever OCO leg fills first cancels the other. Targets 1 and 2 are checkpoints for alerts, not sells. If neither OCO leg has filled " + (r.mode15 ? "48 hours" : "30 days") + " after entry, sell at market.</p>" +
       (warn.length ? '<div class="alert">' + warn.join("<br>") + "</div>" : "") +
-      '<p class="read"><b>Tested result</b> (429 coins, past year, without the five biggest winners): entering when price touches Entry, as this Trigger order does, won 30.0% of trades and averaged −1.94% per trade; 44% reached Target 1, 29% Target 2, 21% Target 3. Waiting for a daily close above Entry did better (41.6% wins, −0.77%). Neither shows an edge; treat these as levels for alerts and manual decisions.</p>' +
+      (r.mode15 ? '<p class="read"><b>Tested result (15m)</b>: buying the next 15m open after a 15m close above the 48-hour high, target = measured move, stop = middle of the range, 48-hour time exit: ' +
+        'about 40% wins and roughly break-even per trade before the biggest winners, negative without them (449 coins, Mar–Oct 2026). Treat it as a watch list, not a system.</p>'
+      : '<p class="read"><b>Tested result (daily)</b>: buying the next open after a daily close above Entry (skipped if more than 5% above), only while BTC is above its 20-day average: ' +
+        'on a $150 account over the past year the rules were chosen on the first half and then beat the plain version on the unseen second half ($281 vs $259 median); about 40% of trades won and the worst drop from a peak was about 28–47%. ' +
+        'It is one year of data and not a guarantee; treat these as levels for alerts and manual decisions.</p>') +
       "</section>";
   }
   function wirePlan(r) {
@@ -1013,6 +1031,9 @@ if (typeof module !== "undefined") module.exports = ENGINE;
   }
   function reading(r) {
     var base = r.base;
+    if (r.mode15) return r.status !== "ranging"
+      ? base + " closed a 15m candle beyond its 48-hour range (" + r.status.replace("breaking ", "") + "). Watch whether the next 15m closes hold beyond " + fmtP(r.status.indexOf("up") >= 0 ? r.up_trigger : r.down_trigger) + "."
+      : base + " is inside its 48-hour range on 15m candles. A 15m close above " + fmtP(r.up_trigger) + " is an intraday breakout up; below " + fmtP(r.down_trigger) + " a breakdown. The daily trend is " + r.phase + ".";
     if (r.status !== "ranging") return base + " closed beyond its 30-day range in the last two days (" + r.status.replace("breaking ", "") + "). Watch whether the next daily closes hold beyond " + fmtP(r.status.indexOf("up") >= 0 ? r.up_trigger : r.down_trigger) + "; a close back inside the range would make it a false breakout.";
     var side = r.bias === "up" ? "a daily close above " + fmtP(r.up_trigger) : "a daily close below " + fmtP(r.down_trigger);
     return base + " is in a " + r.phase + " phase and has gone " + r.days_since_last_breakout + " days without a breakout. Its history puts the next one most likely between " + fmtDY(r.bo_p25) + " and " + fmtDY(r.bo_p75) + ". The lean is " + r.bias + ", so the signal to watch for is " + side + ". Either trigger can fire; set alerts on both. Window based on " + (r.window_source === "coin" ? "this coin's own history." : "all coins' history, because this coin has too little.");
@@ -1028,8 +1049,8 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     for (var i = 0; i < arr.length; i++) { s += arr[i]; if (i >= w) s -= arr[i - w]; out.push(i >= w - 1 ? s / w : null); }
     return out;
   }
-  function loadTf(r, force) {
-    var tf = state.tf, key = r.id + "|" + tf;
+  function loadTf(r, force, tfArg) {
+    var tf = tfArg || state.tf, key = r.id + "|" + tf;
     if (tf === "1D" || state.tfLoading === key || (!force && state.tfData[key])) return;
     state.tfLoading = key;
     getJSON(API + "/market/candles?symbol=" + encodeURIComponent(r.id) + "&granularity=" + TF_GRAN[tf] + "&limit=300", 2).then(function (j) {
@@ -1037,10 +1058,56 @@ if (typeof module !== "undefined") module.exports = ENGINE;
       var cl = k.map(function (x) { return x[4]; });
       state.tfData[key] = { t: k.map(function (x) { return x[0] / 1000; }), o: k.map(function (x) { return x[1]; }), h: k.map(function (x) { return x[2]; }),
         l: k.map(function (x) { return x[3]; }), c: cl, v: k.map(function (x) { return x[5]; }), m50: sma(cl, 50), m200: sma(cl, 200), at: Date.now() };
-      var cur = state.byS[state.sel];
-      if (cur && cur.id === r.id && state.tf === tf) drawChart(cur);
+      var sel = state.byS[state.sel];
+      if (sel && sel.id === r.id && tf === "15m" && state.mode === "15m") {
+        var lc = lastClosed15(state.tfData[key]);
+        if (lc !== state.mode15Bar && !document.querySelector(".plan input:focus")) { state.mode15Bar = lc; select(sel.symbol, true); return; }
+      }
+      if (sel && sel.id === r.id && state.tf === tf) drawChart(cur());
     }).catch(function () {}).then(function () { if (state.tfLoading === key) state.tfLoading = null; });
   }
+
+  /* ---------- 15m breakout strategy (same rules on 15-minute candles; 48-hour range) ----------
+     Backtest 2026-10-10 (449 coins, Mar-Oct 2026, 0.3% costs): every 15m variant lost money; this range
+     length was the least bad (-0.04%/trade without the top 10). Shown for intraday watching only. */
+  var BOX15 = 192;           // 48 hours of 15m candles
+  state.mode = "1D";
+  try { var savedMode = localStorage.getItem("cbm-mode"); if (savedMode === "15m") state.mode = "15m"; } catch (e) {}
+  function lastClosed15(d) {
+    if (!d || !d.t.length) return -1;
+    var k = d.t.length - 1;
+    if (d.t[k] + 900 > Date.now() / 1000) k--;     // drop the still-forming candle
+    return k;
+  }
+  function view(r) {
+    if (!r || state.mode !== "15m") return r;
+    var d = state.tfData[r.id + "|15m"];
+    if (!d) { loadTf(r, false, "15m"); return null; }
+    var t = lastClosed15(d);
+    if (t < BOX15 + 2) return null;
+    var hi = -Infinity, lo = Infinity, i;
+    for (i = t - BOX15 + 1; i <= t; i++) { if (d.h[i] > hi) hi = d.h[i]; if (d.l[i] < lo) lo = d.l[i]; }
+    var status = "ranging";
+    for (var back = 0; back < 2; back++) {              // a 15m close beyond the previous 48h range in the last 2 candles
+      var e = t - back, ph = -Infinity, pl = Infinity;
+      for (i = e - BOX15; i < e; i++) { if (d.h[i] > ph) ph = d.h[i]; if (d.l[i] < pl) pl = d.l[i]; }
+      if (d.c[e] > ph) { status = "breaking up now"; break; }
+      if (d.c[e] < pl) { status = "breaking down now"; break; }
+    }
+    return Object.assign({}, r, { mode15: true, up_trigger: hi, down_trigger: lo, up_target: hi * hi / lo, down_target: lo * lo / hi,
+      status: status, bo_p10: null, bo_p25: null, bo_p50: null, bo_p75: null, bo_p90: null, days_to_target_median: NaN,
+      bar15At: d.t[t] });
+  }
+  function cur() { var r = state.byS[state.sel]; return view(r) || r; }
+  function setMode(mode) {
+    state.mode = mode;
+    try { localStorage.setItem("cbm-mode", mode); } catch (e) {}
+    state.tf = mode === "15m" ? "15m" : "1D";
+    try { localStorage.setItem("cbm-tf", state.tf); } catch (e) {}
+    var r = state.byS[state.sel];
+    if (r) { if (mode === "15m") loadTf(r, false, "15m"); select(r.symbol); }
+  }
+  setInterval(function () { var r = state.byS[state.sel]; if (r && state.mode === "15m" && document.visibilityState === "visible") loadTf(r, true, "15m"); }, 60 * 1000);
   setInterval(function () { var r = state.byS[state.sel]; if (r && state.tf !== "1D" && document.visibilityState === "visible") loadTf(r, true); }, 60 * 1000);
   function legendHtml() {
     var d = state.tf === "1D", per = d ? "day" : "period";
@@ -1057,7 +1124,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     var note = document.querySelector(".tfbar small"); if (note) note.textContent = tf === "1D" ? "Analysis uses daily candles." : "Levels below come from the daily analysis.";
     var lg = $("legend"); if (lg) lg.innerHTML = legendHtml();
     var r = state.byS[state.sel]; if (!r) return;
-    drawChart(r);
+    drawChart(cur());
     if (tf !== "1D") loadTf(r, false);
   }
   function priceNote(r) {
@@ -1242,13 +1309,16 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     }
   }
   $("tbody").addEventListener("click", function (e) { var tr = e.target.closest("tr.row"); if (tr) pick(tr); });
-  $("detail").addEventListener("click", function (e) { var b = e.target.closest("button.tf"); if (b) setTf(b.dataset.tf); });
+  $("detail").addEventListener("click", function (e) {
+    var b = e.target.closest("button.tf"); if (b) setTf(b.dataset.tf);
+    var m = e.target.closest("button.mode"); if (m && m.dataset.mode !== state.mode) setMode(m.dataset.mode);
+  });
   $("tbody").addEventListener("keydown", function (e) { var tr = e.target.closest("tr.row"); if (tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); pick(tr); } });
   $("copy").addEventListener("click", copyCsv);
   var lastW = 0;
-  new ResizeObserver(function (es) { var w = Math.round(es[0].contentRect.width); if (w !== lastW) { lastW = w; var r = state.byS[state.sel]; if (r) drawChart(r); } }).observe($("detail"));
+  new ResizeObserver(function (es) { var w = Math.round(es[0].contentRect.width); if (w !== lastW) { lastW = w; if (state.byS[state.sel]) drawChart(cur()); } }).observe($("detail"));
   var mq = window.matchMedia("(prefers-color-scheme: dark)");
-  if (mq.addEventListener) mq.addEventListener("change", function () { var r = state.byS[state.sel]; if (r) drawChart(r); });
+  if (mq.addEventListener) mq.addEventListener("change", function () { if (state.byS[state.sel]) drawChart(cur()); });
   // Manual escape hatch if anything ever looks stuck: a real reload. The coin stays in the address (#BTCUSDT),
   // calculator settings are in localStorage, and candles come back from IndexedDB, so it takes seconds.
   $("refresh").addEventListener("click", function () {
