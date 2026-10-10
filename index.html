@@ -943,7 +943,7 @@ if (typeof module !== "undefined") module.exports = ENGINE;
     var f = function (x) { return x.toFixed(P.pp); };
     var pc = function (x) { return ((x / P.entry - 1) * 100).toFixed(2) + "%"; };
     var est = r.status !== "ranging" ? "breakout in progress" : fmtRange(r.bo_p25, r.bo_p75) + " (most likely " + fmtD(r.bo_p50) + ")";
-    return "#" + r.symbol + " - Long🟢\n\nCurrent price: " + fmtP(livePrice(r)) + "\nEntry: " + f(P.entry) + "\nStop Loss: " + f(P.slTrig) + " (" + pc(P.slTrig) + ")" +
+    return "#" + r.symbol + " - BUY🟢\n\nCurrent price: " + fmtP(livePrice(r)) + "\nEntry: " + f(P.entry) + "\nStop Loss: " + f(P.slTrig) + " (" + pc(P.slTrig) + ")" +
       "\n\nTarget 1: " + f(P.t1) + " (+" + pc(P.t1) + ")\nTarget 2: " + f(P.t2) + " (+" + pc(P.t2) + ")\nTarget 3: " + f(P.tp) + " (+" + pc(P.tp) + ")" +
       "\n\nEst. breakout period: " + est;
   }
